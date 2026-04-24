@@ -1116,6 +1116,10 @@ button {
   color: var(--rail-fg);
   border-right: 1px solid var(--rail-border);
   position: relative;
+  /* Fixed width so the rail stays consistent across pages regardless
+   * of whether its parent is the sl-ws-shell grid or a plain flex row. */
+  width: 64px;
+  flex: 0 0 64px;
 }
 
 .sl-ws-rail::after {
@@ -2376,7 +2380,8 @@ button {
 .sl-calendar-shell {
   display: flex;
   flex-direction: column;
-  height: 100vh;
+  min-height: 0;
+  flex: 1;
   padding: 16px 24px;
   overflow: hidden;
 }
@@ -2641,4 +2646,289 @@ button {
 @keyframes sl-msg-flash {
   0%   { background: var(--accent-soft); }
   100% { background: transparent; }
+}
+
+/* ---- Admin dashboard (M12-P3) ----------------------------------------- */
+
+.sl-admin-page {
+  flex: 1;
+  overflow: auto;
+  background: var(--bg);
+  min-height: 0;
+}
+.sl-admin-container {
+  max-width: 1040px;
+  margin: 0 auto;
+  padding: 32px 32px 64px;
+}
+.sl-admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+.sl-admin-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+.sl-admin-subtitle {
+  margin-top: 4px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.sl-admin-tabs {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+.sl-admin-tab {
+  position: relative;
+  padding: 10px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  border-radius: var(--r-md) var(--r-md) 0 0;
+  transition: color var(--t-fast) var(--ease);
+}
+.sl-admin-tab:hover {
+  color: var(--text);
+  background: var(--surface-hover);
+}
+.sl-admin-tab.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.sl-admin-tab.active::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  background: var(--accent);
+  border-radius: 2px;
+}
+
+.sl-admin-section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.sl-admin-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.sl-admin-section-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.005em;
+}
+
+.sl-admin-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+
+.sl-admin-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.sl-admin-table th {
+  text-align: left;
+  padding: 12px 16px;
+  background: var(--surface-raised);
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.sl-admin-table td {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 14px;
+  vertical-align: middle;
+}
+.sl-admin-table tr:last-child td {
+  border-bottom: none;
+}
+.sl-admin-table tr:hover td {
+  background: var(--surface-hover);
+}
+
+.sl-admin-member {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.sl-admin-avatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  text-transform: uppercase;
+}
+.sl-admin-name {
+  font-weight: 500;
+  color: var(--text);
+}
+.sl-admin-email {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.sl-admin-role-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+.sl-admin-role-badge.owner {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+}
+.sl-admin-role-badge.admin {
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+}
+
+.sl-admin-select {
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.sl-admin-select:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sl-admin-danger {
+  padding: 6px 12px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: var(--r-md);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition:
+    color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
+}
+.sl-admin-danger:hover {
+  color: #c44;
+  background: color-mix(in srgb, #c44 8%, transparent);
+}
+
+.sl-admin-empty {
+  padding: 48px 24px;
+  text-align: center;
+  color: var(--text-muted);
+}
+.sl-admin-empty-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 8px;
+}
+
+.sl-admin-form {
+  display: grid;
+  gap: 16px;
+  max-width: 520px;
+}
+.sl-admin-form label {
+  display: block;
+}
+.sl-admin-form label > span {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.sl-admin-form input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.sl-admin-form input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.sl-admin-audit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sl-admin-audit-row {
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.sl-admin-audit-row:last-child {
+  border-bottom: none;
+}
+.sl-admin-audit-action {
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  background: var(--surface-raised);
+  color: var(--text-muted);
+  flex-shrink: 0;
+  white-space: nowrap;
+}
+.sl-admin-audit-detail {
+  flex: 1;
+  font-size: 14px;
+}
+.sl-admin-audit-target {
+  color: var(--text);
+}
+.sl-admin-audit-meta {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 12px;
 }

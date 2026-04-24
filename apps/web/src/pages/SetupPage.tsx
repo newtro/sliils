@@ -37,10 +37,9 @@ export function SetupPage(): ReactElement {
   if (!user) {
     return <Navigate to="/login" replace />;
   }
-  // If setup is already complete, get out of the way.
-  if (!user.needs_setup) {
-    return <Navigate to="/" replace />;
-  }
+  // This screen handles both first-time setup AND "I want another
+  // workspace." Copy adjusts; the form is identical.
+  const isFirstTime = user.needs_setup;
 
   async function onSubmit(e: FormEvent) {
     e.preventDefault();
@@ -59,8 +58,12 @@ export function SetupPage(): ReactElement {
 
   return (
     <AuthCard
-      heading="Create your workspace"
-      subtext="One workspace per team. You can create more later."
+      heading={isFirstTime ? 'Create your workspace' : 'Create a new workspace'}
+      subtext={
+        isFirstTime
+          ? 'One workspace per team. You can create more later.'
+          : 'You can belong to as many workspaces as you like.'
+      }
     >
       <form onSubmit={onSubmit} className="sl-form">
         <label className="sl-field">

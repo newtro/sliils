@@ -69,6 +69,18 @@ export function WorkspaceRail({ activeSlug }: Props): ReactElement {
         </Link>
       ))}
 
+      {/* Create a new workspace. Always visible — lets users start a
+       * second workspace without having to find a settings menu. */}
+      <button
+        type="button"
+        className="sl-ws-rail-icon sl-ws-rail-icon-btn"
+        title="Create a new workspace"
+        aria-label="Create a new workspace"
+        onClick={() => navigate('/setup')}
+      >
+        <PlusIcon />
+      </button>
+
       {/* Cross-feature nav for the active workspace. Only shows when a
        * current workspace is resolved. */}
       {current && (
@@ -109,6 +121,14 @@ export function WorkspaceRail({ activeSlug }: Props): ReactElement {
       <div className="sl-ws-rail-spacer" />
       <div className="sl-ws-rail-bottom">
         <ThemeToggle />
+        <Link
+          to="/me"
+          className={`sl-ws-rail-icon ${location.pathname === '/me' ? 'active' : ''}`}
+          title="Your profile"
+          aria-label="Your profile"
+        >
+          {(user?.display_name || user?.email || '?')[0]?.toUpperCase()}
+        </Link>
         <button
           type="button"
           className="sl-ws-rail-icon sl-ws-rail-icon-btn"
@@ -189,6 +209,25 @@ function AdminIcon(): ReactElement {
       <circle cx="9" cy="7" r="4" />
       <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
       <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+    </svg>
+  );
+}
+
+function PlusIcon(): ReactElement {
+  return (
+    <svg
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <line x1="12" y1="5" x2="12" y2="19" />
+      <line x1="5" y1="12" x2="19" y2="12" />
     </svg>
   );
 }
