@@ -33,6 +33,7 @@ func (s *Server) mountMe(api *echo.Group) {
 	g.PATCH("", s.updateMe)
 	g.GET("/workspaces", s.listMyWorkspaces)
 	s.mountMePrefs(g)
+	s.mountDevices(g)
 }
 
 func (s *Server) getMe(c echo.Context) error {

@@ -85,6 +85,16 @@ type Config struct {
 	// WOPI (Collabora Online)
 	CollaboraURL         string        // Collabora Online public URL (empty = UI hides "Open in editor")
 	WOPIAccessTokenTTL   time.Duration // TTL on access tokens Collabora hands back on file fetch (default 10m)
+
+	// Push notifications (M11 — VAPID web push + optional external push-proxy)
+	PushEnabled      bool   // master switch for /me/devices + push fanout
+	VAPIDPublicKey   string // generated once per install; safe to embed in the client bundle
+	VAPIDPrivateKey  string // keep secret; signs every web push request
+	VAPIDSubject     string // mailto: contact published to push services (e.g. "mailto:ops@sliils.com")
+	PushProxyURL     string // empty = APNs/FCM/UnifiedPush stay stubbed
+	PushProxyJWT     string // bearer we send to the push-proxy
+	PushTenantID     string // our identity to the push-proxy (billing + audit)
+	PushTTLSeconds   int    // how long push services should queue undelivered notifications
 }
 
 func Load() (*Config, error) {
@@ -151,6 +161,15 @@ func Load() (*Config, error) {
 
 		CollaboraURL:       strings.TrimRight(getenv("SLIILS_COLLABORA_URL", ""), "/"),
 		WOPIAccessTokenTTL: getDurationEnv("SLIILS_WOPI_ACCESS_TOKEN_TTL", 10*time.Minute),
+
+		PushEnabled:     getBoolEnv("SLIILS_PUSH_ENABLED", true),
+		VAPIDPublicKey:  getenv("SLIILS_VAPID_PUBLIC_KEY", ""),
+		VAPIDPrivateKey: getenv("SLIILS_VAPID_PRIVATE_KEY", ""),
+		VAPIDSubject:    getenv("SLIILS_VAPID_SUBJECT", "mailto:push@sliils.local"),
+		PushProxyURL:    strings.TrimRight(getenv("SLIILS_PUSH_PROXY_URL", ""), "/"),
+		PushProxyJWT:    getenv("SLIILS_PUSH_PROXY_JWT", ""),
+		PushTenantID:    getenv("SLIILS_PUSH_TENANT_ID", ""),
+		PushTTLSeconds:  getIntEnv("SLIILS_PUSH_TTL_SECONDS", 86400),
 	}
 
 	if cfg.LogFormat != "json" && cfg.LogFormat != "text" {

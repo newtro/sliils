@@ -36,3 +36,10 @@ WHERE mentioned_user_id = $1
 -- name: GetChannelMembership :one
 SELECT * FROM channel_memberships
 WHERE channel_id = $1 AND user_id = $2;
+
+-- name: ListChannelMembers :many
+-- Lean projection — callers that need display_name can join users.
+-- Used by the M11 DM push-fanout to enumerate the other participants.
+SELECT user_id
+FROM   channel_memberships
+WHERE  channel_id = $1;

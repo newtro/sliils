@@ -117,6 +117,34 @@ func (q *Queries) GetChannelMembership(ctx context.Context, arg GetChannelMember
 	return i, err
 }
 
+const listChannelMembers = `-- name: ListChannelMembers :many
+SELECT user_id
+FROM   channel_memberships
+WHERE  channel_id = $1
+`
+
+// Lean projection — callers that need display_name can join users.
+// Used by the M11 DM push-fanout to enumerate the other participants.
+func (q *Queries) ListChannelMembers(ctx context.Context, channelID int64) ([]int64, error) {
+	rows, err := q.db.Query(ctx, listChannelMembers, channelID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []int64{}
+	for rows.Next() {
+		var user_id int64
+		if err := rows.Scan(&user_id); err != nil {
+			return nil, err
+		}
+		items = append(items, user_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listUserChannelMemberships = `-- name: ListUserChannelMemberships :many
 SELECT id, workspace_id, channel_id, user_id, notify_pref, last_read_message_id, joined_at, muted_until FROM channel_memberships
 WHERE user_id = $1 AND workspace_id = $2

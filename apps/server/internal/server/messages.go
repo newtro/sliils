@@ -243,8 +243,68 @@ func (s *Server) createMessage(c echo.Context) error {
 			"author_id":  user.ID,
 		}
 		s.broker.Publish(realtime.TopicWorkspace(workspaceID), "mention.created", mustJSON(payload))
+
+		// M11: enqueue a push job per recipient. The worker gates on
+		// DND + channel mute + notify_pref; we don't redo that logic
+		// here. Self-mentions get filtered out at mention-extract time.
+		if s.enqueuePush != nil {
+			_ = s.enqueuePush(
+				c.Request().Context(),
+				uid,
+				strconv.FormatInt(created.ID, 10),
+				"mention",
+				strconv.FormatInt(channelID, 10),
+			)
+		}
+	}
+
+	// DM fan-out: if the message landed in a DM channel, notify the
+	// other participant(s) even without an explicit @-mention. A DM by
+	// definition is a mention of everyone in the thread.
+	if s.enqueuePush != nil {
+		dmRecipients := s.dmRecipientsIfDM(c.Request().Context(), user.ID, workspaceID, channelID)
+		for _, uid := range dmRecipients {
+			if uid == user.ID {
+				continue
+			}
+			_ = s.enqueuePush(
+				c.Request().Context(),
+				uid,
+				strconv.FormatInt(created.ID, 10),
+				"dm",
+				strconv.FormatInt(channelID, 10),
+			)
+		}
 	}
 	return c.JSON(http.StatusCreated, dto)
+}
+
+// dmRecipientsIfDM returns the non-self members of `channelID` iff it
+// is a DM channel, and nil/empty slice otherwise. A single short query
+// per mention-less message is cheap and keeps the DM branch readable.
+func (s *Server) dmRecipientsIfDM(ctx context.Context, userID, workspaceID, channelID int64) []int64 {
+	var ids []int64
+	err := db.WithTx(ctx, s.pool.Pool,
+		db.TxOptions{UserID: userID, WorkspaceID: workspaceID, ReadOnly: true},
+		func(scope db.TxScope) error {
+			ch, err := scope.Queries.GetChannelByID(ctx, channelID)
+			if err != nil {
+				return err
+			}
+			if ch.Type != "dm" {
+				return nil
+			}
+			rows, err := scope.Queries.ListChannelMembers(ctx, channelID)
+			if err != nil {
+				return err
+			}
+			ids = append(ids, rows...)
+			return nil
+		})
+	if err != nil {
+		return nil
+	}
+	return ids
 }
 
 // ---- list ---------------------------------------------------------------

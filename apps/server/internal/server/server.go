@@ -23,6 +23,7 @@ import (
 	"github.com/sliils/sliils/apps/server/internal/health"
 	"github.com/sliils/sliils/apps/server/internal/pages"
 	"github.com/sliils/sliils/apps/server/internal/problem"
+	"github.com/sliils/sliils/apps/server/internal/push"
 	"github.com/sliils/sliils/apps/server/internal/ratelimit"
 	"github.com/sliils/sliils/apps/server/internal/realtime"
 	"github.com/sliils/sliils/apps/server/internal/search"
@@ -58,8 +59,19 @@ type Server struct {
 	ySweet    *pages.Client     // nil when pages are disabled
 	collabora *wopi.DiscoveryClient // nil when SLIILS_COLLABORA_URL is empty
 	wopiTokens *wopi.TokenIssuer // always wired when Pages are enabled (WOPI + non-Collabora uses share the issuer)
+	push      *push.Service     // nil when push is disabled
 	enqueueCalPush CalendarPushEnqueueFunc // nil when no worker runner is wired
+	enqueuePush    PushEnqueueFunc         // nil when no worker runner is wired
 }
+
+// PushEnqueueFunc hands a single-recipient push job to the worker runner.
+// Wired in main.go after the runner is built (avoids server→workers
+// import cycle). Signature mirrors the fan-out payload shape.
+type PushEnqueueFunc func(ctx context.Context, userID int64, msgID, notifType, channelID string) error
+
+// SetPushEnqueue is called from main after the Runner is built, so
+// mention/DM handlers can kick off push jobs.
+func (s *Server) SetPushEnqueue(f PushEnqueueFunc) { s.enqueuePush = f }
 
 // CalendarPushEnqueueFunc forwards a calendar-push job to the worker
 // runner. main.go wires this at startup to avoid a server→workers
@@ -86,6 +98,7 @@ type Options struct {
 	CallsClient   *calls.Client // nil = calls disabled (endpoints 503)
 	CalSync       *calsync.Service // nil = external calendars disabled
 	YSweet        *pages.Client   // nil = pages are disabled (create/auth endpoints 503)
+	Push          *push.Service   // nil = push is disabled
 }
 
 func New(cfg *config.Config, logger *slog.Logger, pool *db.Pool, opts Options) (*Server, error) {
@@ -188,6 +201,9 @@ func New(cfg *config.Config, logger *slog.Logger, pool *db.Pool, opts Options) (
 	}
 	if cfg.CollaboraURL != "" {
 		s.collabora = wopi.NewDiscoveryClient(cfg.CollaboraURL, logger)
+	}
+	if opts.Push != nil {
+		s.push = opts.Push
 	}
 
 	s.routes()

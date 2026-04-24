@@ -14,7 +14,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, display_name)
 VALUES ($1, $2, $3)
-RETURNING id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at
+RETURNING id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz
 `
 
 type CreateUserParams struct {
@@ -39,12 +39,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeactivatedAt,
+		&i.DndEnabledUntil,
+		&i.QuietHoursStart,
+		&i.QuietHoursEnd,
+		&i.QuietHoursTz,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at FROM users
+SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz FROM users
 WHERE email = $1 AND deactivated_at IS NULL
 `
 
@@ -64,12 +68,16 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeactivatedAt,
+		&i.DndEnabledUntil,
+		&i.QuietHoursStart,
+		&i.QuietHoursEnd,
+		&i.QuietHoursTz,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at FROM users
+SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz FROM users
 WHERE id = $1 AND deactivated_at IS NULL
 `
 
@@ -89,6 +97,10 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.DeactivatedAt,
+		&i.DndEnabledUntil,
+		&i.QuietHoursStart,
+		&i.QuietHoursEnd,
+		&i.QuietHoursTz,
 	)
 	return i, err
 }

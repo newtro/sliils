@@ -275,6 +275,25 @@ type User struct {
 	CreatedAt        pgtype.Timestamptz
 	UpdatedAt        pgtype.Timestamptz
 	DeactivatedAt    pgtype.Timestamptz
+	DndEnabledUntil  pgtype.Timestamptz
+	QuietHoursStart  *int32
+	QuietHoursEnd    *int32
+	QuietHoursTz     *string
+}
+
+type UserDevice struct {
+	ID             int64
+	UserID         int64
+	Platform       string
+	Endpoint       string
+	P256dh         string
+	AuthSecret     string
+	UserAgent      string
+	Label          string
+	CreatedAt      pgtype.Timestamptz
+	LastSeenAt     pgtype.Timestamptz
+	DisabledAt     pgtype.Timestamptz
+	DisabledReason string
 }
 
 type Workspace struct {

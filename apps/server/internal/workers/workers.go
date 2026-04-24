@@ -28,6 +28,7 @@ import (
 
 	"github.com/sliils/sliils/apps/server/internal/calsync"
 	"github.com/sliils/sliils/apps/server/internal/pages"
+	"github.com/sliils/sliils/apps/server/internal/push"
 	"github.com/sliils/sliils/apps/server/internal/realtime"
 	"github.com/sliils/sliils/apps/server/internal/search"
 )
@@ -84,6 +85,10 @@ type Options struct {
 	// PageSnapshotRetention caps the number of snapshots kept per page.
 	// Defaults to 50.
 	PageSnapshotRetention int
+
+	// Push is the notification delivery service. Nil = push disabled; the
+	// fan-out worker isn't registered.
+	Push *push.Service
 
 	// Logger is used for worker diagnostics. Falls back to slog.Default.
 	Logger *slog.Logger
@@ -217,6 +222,17 @@ func NewRunner(opts Options) (*Runner, error) {
 		)
 	}
 
+	// Push fan-out (M11). One job per (recipient, message) — no periodic
+	// component because jobs are enqueued on demand from the message
+	// handler when mentions / DMs land.
+	if opts.Push != nil {
+		river.AddWorker(workers, &PushFanoutWorker{
+			pool:   opts.OwnerPool,
+			push:   opts.Push,
+			logger: opts.Logger.With(slog.String("worker", "push_fanout")),
+		})
+	}
+
 	rc, err := river.NewClient(riverpgxv5.New(opts.OwnerPool), &river.Config{
 		Queues: map[string]river.QueueConfig{
 			river.QueueDefault: {MaxWorkers: 4},
@@ -271,6 +287,23 @@ func (r *Runner) Client() *river.Client[pgx.Tx] {
 		return nil
 	}
 	return r.rc
+}
+
+// EnqueuePushFanout inserts a per-recipient push job. The call site
+// (messages handler) enqueues one per recipient when a mention or DM
+// lands. Safe to call on a nil Runner — the shim no-ops so tests
+// without a worker don't have to check.
+func (r *Runner) EnqueuePushFanout(ctx context.Context, userID int64, msgID, notifType, channelID string) error {
+	if r == nil || r.rc == nil {
+		return nil
+	}
+	_, err := r.rc.Insert(ctx, PushFanoutArgs{
+		UserID:    userID,
+		MsgID:     msgID,
+		Type:      notifType,
+		ChannelID: channelID,
+	}, nil)
+	return err
 }
 
 // EnqueueCalendarPush inserts a CalendarPushArgs job into the queue.

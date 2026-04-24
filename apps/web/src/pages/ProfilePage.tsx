@@ -2,6 +2,7 @@ import { useState } from 'react';
 import type { FormEvent, ReactElement } from 'react';
 import { Link, Navigate } from 'react-router';
 import { AuthCard } from '../components/AuthCard';
+import { NotificationsPanel } from '../components/NotificationsPanel';
 import { useAuth } from '../auth/AuthContext';
 import { ApiError, apiFetch } from '../api/client';
 import type { User } from '../auth/AuthContext';
@@ -64,6 +65,9 @@ export function ProfilePage(): ReactElement {
           {busy ? 'Saving…' : 'Save'}
         </button>
       </form>
+      <div style={{ marginTop: 24 }}>
+        <NotificationsPanel />
+      </div>
     </AuthCard>
   );
 }

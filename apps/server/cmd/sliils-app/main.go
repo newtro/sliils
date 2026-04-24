@@ -28,6 +28,7 @@ import (
 	"github.com/sliils/sliils/apps/server/internal/db"
 	"github.com/sliils/sliils/apps/server/internal/logging"
 	"github.com/sliils/sliils/apps/server/internal/pages"
+	"github.com/sliils/sliils/apps/server/internal/push"
 	"github.com/sliils/sliils/apps/server/internal/search"
 	"github.com/sliils/sliils/apps/server/internal/server"
 	"github.com/sliils/sliils/apps/server/internal/workers"
@@ -38,6 +39,21 @@ import (
 var version = "dev"
 
 func main() {
+	// One-shot helper: `sliils-app genvapid` prints a fresh VAPID keypair
+	// and exits. Handy for local dev since the private key must be set in
+	// the env before the server starts the push service. The Public key is
+	// safe to commit + ship in the client bundle.
+	if len(os.Args) >= 2 && os.Args[1] == "genvapid" {
+		priv, pub, err := push.GenerateVAPIDKeys()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "genvapid: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("SLIILS_VAPID_PUBLIC_KEY=" + pub)
+		fmt.Println("SLIILS_VAPID_PRIVATE_KEY=" + priv)
+		return
+	}
+
 	mode := flag.String("mode", "all", "process mode: all | app | worker")
 	flag.Parse()
 
@@ -107,7 +123,7 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 	// RLS is enabled: search drain, calendar sync workers, or pages
 	// (snapshot worker + comment-by-id lookup). River migrations run
 	// against the owner pool too since River tables live there.
-	needsOwnerPool := cfg.SearchEnabled || cfg.PagesEnabled || cfg.ExternalCalendarsEnabled
+	needsOwnerPool := cfg.SearchEnabled || cfg.PagesEnabled || cfg.ExternalCalendarsEnabled || cfg.PushEnabled
 	if needsOwnerPool {
 		op, err := db.OpenOwner(ctx, cfg.DatabaseURL, logger)
 		if err != nil {
@@ -203,6 +219,35 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 		ySweet = yc
 	}
 
+	var pushSvc *push.Service
+	if cfg.PushEnabled {
+		var proxy *push.ProxyConfig
+		if cfg.PushProxyURL != "" {
+			proxy = &push.ProxyConfig{
+				URL:        cfg.PushProxyURL,
+				InstallJWT: cfg.PushProxyJWT,
+				TenantID:   cfg.PushTenantID,
+			}
+		}
+		ps, err := push.New(push.Options{
+			VAPIDPublicKey:  cfg.VAPIDPublicKey,
+			VAPIDPrivateKey: cfg.VAPIDPrivateKey,
+			Subject:         cfg.VAPIDSubject,
+			TTLSeconds:      cfg.PushTTLSeconds,
+			Proxy:           proxy,
+			Logger:          logger,
+		})
+		if err != nil {
+			return fmt.Errorf("init push service: %w", err)
+		}
+		if cfg.VAPIDPublicKey == "" || cfg.VAPIDPrivateKey == "" {
+			logger.Warn("push enabled but VAPID keys are empty — web push will fail until SLIILS_VAPID_PUBLIC_KEY / SLIILS_VAPID_PRIVATE_KEY are set; generate with `go run ./cmd/sliils-app genvapid`")
+		} else {
+			logger.Info("push service ready", slog.Bool("proxy_configured", proxy != nil))
+		}
+		pushSvc = ps
+	}
+
 	var calSync *calsync.Service
 	if cfg.ExternalCalendarsEnabled {
 		svc, err := calsync.NewService(calsync.Options{
@@ -229,6 +274,7 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 		CallsClient:   callsClient,
 		CalSync:       calSync,
 		YSweet:        ySweet,
+		Push:          pushSvc,
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
@@ -249,6 +295,7 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 			YSweet:            ySweet,
 			PageSnapshotPeriod:    cfg.PageSnapshotPeriod,
 			PageSnapshotRetention: cfg.PageSnapshotRetention,
+			Push:              pushSvc,
 			Logger:            logger,
 		})
 		if err != nil {
@@ -259,6 +306,9 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 		// when external sync isn't configured.
 		if calSync != nil {
 			srv.SetCalendarPushEnqueue(runner.EnqueueCalendarPush)
+		}
+		if pushSvc != nil {
+			srv.SetPushEnqueue(runner.EnqueuePushFanout)
 		}
 	}
 
