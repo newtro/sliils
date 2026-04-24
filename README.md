@@ -1,0 +1,213 @@
+<p align="center">
+  <img src="docs/logo.png" alt="SliilS logo" width="220" />
+</p>
+
+<h1 align="center">SliilS</h1>
+
+<p align="center">
+  <em>Pronounced “slice.”</em> A self-hosted, multi-tenant Slack/Teams alternative for small teams (2–50 users) — with no per-seat tax.<br/>
+  <a href="https://sliils.com">sliils.com</a>
+</p>
+
+<p align="center">
+  <img alt="Go" src="https://img.shields.io/badge/Go-1.25-00ADD8?logo=go&logoColor=white"/>
+  <img alt="TypeScript" src="https://img.shields.io/badge/TypeScript-5.7-3178C6?logo=typescript&logoColor=white"/>
+  <img alt="React" src="https://img.shields.io/badge/React-19-61DAFB?logo=react&logoColor=white"/>
+  <img alt="Postgres" src="https://img.shields.io/badge/Postgres-18-4169E1?logo=postgresql&logoColor=white"/>
+  <img alt="Status" src="https://img.shields.io/badge/status-pre--v1-orange"/>
+</p>
+
+---
+
+## Why this exists
+
+Every team of eight pays $200+ / month for Slack, Teams, or Google Chat and gets locked behind shared infra they cannot audit, move, or own. SliilS is the alternative:
+
+- **Own the stack.** One binary, one Postgres, your box. Backup is `pg_dump`.
+- **No per-seat tax.** Add a hundred users. Price stays the same.
+- **Teams-class feature surface, Slack-class UX.** Channels, threads, DMs, search, calls, calendar, pages, integrations — all there, all self-hosted.
+- **Multi-tenant from day one.** One install runs many workspaces with enforced `FORCE ROW LEVEL SECURITY` tenant isolation.
+
+## Status
+
+**M10 of 12 shipped.** Every milestone ends with passing integration tests (`go test -tags=integration`) and a live browser demo. See [docs/kickoff/implementation-roadmap.md](docs/kickoff/implementation-roadmap.md) for the plan.
+
+| # | Milestone | State | Highlights |
+|---|---|---|---|
+| M0 | Bootstrap | ✅ | Go / Echo / sqlc / Goose / pnpm monorepo |
+| M1 | Auth | ✅ | Argon2id + JWT, magic-link, verify-email, reset-password — no Firebase |
+| M2 | Workspaces + RLS | ✅ | Per-request `SET LOCAL app.workspace_id`, `FORCE ROW LEVEL SECURITY`, non-owner DB role |
+| M3 | Realtime messaging | ✅ | Partitioned `messages` (monthly), WS broker w/ reconnect + diff-sync, edits, reactions |
+| M4 | Threads & presence | ✅ | `<@user>` mentions, typing indicators, presence, per-channel unread + mention counters |
+| M5 | Files | ✅ | Multipart upload, EXIF strip, SHA-256 dedupe, drag-drop, `IStorage` interface |
+| M6 | Search | ✅ | Meilisearch + River + transactional outbox + tenant-token HMAC + ⌘K overlay |
+| M7 | Multi-workspace identity | ✅ | Invite flow (email + link), per-workspace custom status, per-workspace notify pref |
+| M8 | Voice / video calls | ✅ | LiveKit SFU + DMs + meetings, incoming-call banner, background blur |
+| M9 | Calendar | ✅ | RFC 5545 RRULE, RSVPs, reminders, iCal feed, Google Calendar bidirectional sync |
+| M10 | Pages + Collabora | ✅ | TipTap + Yjs via Y-Sweet, page comments + version history, WOPI for .docx/.xlsx/.pptx |
+| M11 | Push notifications | ⏳ | VAPID web push, service worker, push proxy, DND / quiet hours |
+| M12 | Apps platform + GA | ⏳ | OAuth 2.0, Block-Kit, webhooks, admin dashboard, GDPR export, WCAG 2.1 AA |
+
+### Screenshots
+
+<p align="center">
+  <img src="docs/screenshots/m4-workspace.png" alt="Workspace view" width="49%" />
+  <img src="docs/screenshots/m9-calendar.png" alt="Calendar" width="49%" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/m8-dm-with-call.png" alt="DM with voice/video call" width="49%" />
+  <img src="docs/screenshots/m7-invite-dialog.png" alt="Invite dialog" width="49%" />
+</p>
+<p align="center">
+  <img src="docs/screenshots/theme-dark-workspace.png" alt="Dark theme" width="49%" />
+  <img src="docs/screenshots/theme-light-workspace.png" alt="Light theme" width="49%" />
+</p>
+
+More in [docs/screenshots/](docs/screenshots/).
+
+## Architecture in one breath
+
+```
+┌──────── Browser ────────┐    ┌───── External processes (native binaries) ─────┐
+│  React 19 SPA (Vite)    │    │  Meilisearch  LiveKit  Y-Sweet  Collabora*     │
+│  y-sweet client         │    └──────────────────────┬──────────────────────────┘
+│  TipTap / react-big-cal │                           │
+└────────────┬────────────┘                           │
+             │ HTTPS + WSS                            │
+             ▼                                        │
+┌─────────── Go app server (Echo) ────────────────────┴────────────┐
+│  handlers  ·  in-proc realtime broker  ·  River worker queue     │
+│  search drain / snapshots / calendar-sync / event reminders      │
+└────────────┬─────────────────────────────────────────────────────┘
+             │ pgx (tenant pool: RLS-forcing role)
+             │ pgx (owner pool: bypasses RLS for workers + migrations)
+             ▼
+       PostgreSQL 18  (+ FORCE ROW LEVEL SECURITY on every tenant table)
+```
+\* Collabora requires Linux; WOPI endpoints + Office-doc UI work in dev without it.
+
+Key design locks:
+
+- **Multi-tenant isolation is enforced by Postgres, not app code.** Every tenant table has `FORCE ROW LEVEL SECURITY`; the runtime role has no bypass. If a handler forgets to set `app.workspace_id`, the query returns zero rows — not the wrong rows.
+- **Owner pool / tenant pool split.** Handlers use the RLS-forcing pool. Workers (search indexer, snapshot sweep, calendar sync) use the owner pool — they operate across tenants intentionally, one tenant per tx.
+- **Transactional outboxes.** Search indexing is a `search_outbox` table drained by River. Survives a Meilisearch outage without losing events.
+- **Scoped tokens everywhere.** Meilisearch tenant tokens HMAC-bake `workspace_id` + `visible_to_user_ids`. WOPI access tokens bind a specific `file_id`. LiveKit join tokens are room-scoped.
+
+Read the full spec in [docs/kickoff/tech-spec.md](docs/kickoff/tech-spec.md).
+
+## Quick start (local dev)
+
+### Prerequisites
+
+- **Node.js** ≥ 22 and **pnpm** ≥ 10
+- **Go** ≥ 1.25
+- **PostgreSQL** 17+ — native install recommended on Windows
+- **sqlc** (only if you change `internal/db/queries/*.sql`)
+
+Optional sidecar services (all run as **native binaries** — no Docker required for dev):
+
+| Service | Purpose | Installed via |
+|---|---|---|
+| [Meilisearch](https://www.meilisearch.com/) | Full-text search | native binary |
+| [LiveKit](https://livekit.io/) | Voice/video SFU | native binary |
+| [Y-Sweet](https://github.com/drifting-in-space/y-sweet) | Yjs collab server for Pages | `npm i y-sweet` auto-fetches binary |
+
+### First-time setup
+
+```bash
+pnpm install
+
+# One-time: local dev database
+createdb -U postgres sliils_dev
+psql -U postgres -d sliils_dev -c "CREATE EXTENSION citext;"
+
+# Configure the server
+cp apps/server/.env.example apps/server/.env
+# edit apps/server/.env — at minimum set SLIILS_JWT_SIGNING_KEY and SLIILS_RESEND_API_KEY
+```
+
+### Run the dev loop
+
+```bash
+# Terminal 1 — start sidecars you want (skip any you don't need)
+meilisearch --db-path ./data/meilisearch --master-key dev-master-key
+livekit-server --config ./config/livekit-dev.yaml
+y-sweet serve ./data/y-sweet --port 8787
+
+# Terminal 2 — API server (auto-runs migrations)
+pnpm dev:server
+
+# Terminal 3 — web app
+pnpm dev
+```
+
+Web app → [http://localhost:5173](http://localhost:5173). API → [http://localhost:8080](http://localhost:8080).
+
+### Tests
+
+```bash
+# Unit tests (no external services)
+pnpm test
+pnpm go:test
+
+# Go integration tests — require a throwaway sliils_test DB
+createdb -U postgres sliils_test
+psql -U postgres -d sliils_test -c "CREATE EXTENSION citext;"
+
+cd apps/server
+go test -tags=integration ./internal/server/...
+
+# Full CI suite locally
+pnpm ci:all
+```
+
+Integration tests reset the schema on every test, so re-run freely.
+
+## Repository layout
+
+```
+.
+├── apps/
+│   ├── server/        Go — Echo + sqlc + River + pgx
+│   ├── web/           Vite + React 19 + React Router 7 SPA
+│   ├── desktop/       Tauri 2 wrapper (scaffolded, pre-M11)
+│   └── mobile/        Expo / React Native (scaffolded, pre-M11)
+├── packages/
+│   ├── ui/            Shared UI primitives
+│   ├── api/           Shared TypeScript API types
+│   └── schemas/       Shared Zod schemas
+├── docs/
+│   ├── kickoff/       Implementation-ready specs (read these first)
+│   └── screenshots/   Demo screenshots per milestone
+├── config/            Sidecar configs (LiveKit, Caddy, etc.)
+├── docker-compose.yml Full-stack prod compose (Linux-first)
+└── Caddyfile          TLS + reverse proxy for single-VM deploy
+```
+
+## Documentation
+
+Every non-trivial decision is pre-specified in **[docs/kickoff/](docs/kickoff/)**:
+
+| Read this to… | File |
+|---|---|
+| Pitch in 30s | [project-plan.md](docs/kickoff/project-plan.md) |
+| Know what's being built | [requirements.md](docs/kickoff/requirements.md) |
+| Understand the architecture | [architecture.md](docs/kickoff/architecture.md) |
+| Implement backend / data / API | [tech-spec.md](docs/kickoff/tech-spec.md) |
+| Design or build UI | [ui-spec.md](docs/kickoff/ui-spec.md) |
+| See user flows | [workflows.md](docs/kickoff/workflows.md) |
+| Start coding the next milestone | [implementation-roadmap.md](docs/kickoff/implementation-roadmap.md) |
+| See all 35 architecture decisions | [adr/](docs/kickoff/adr/) |
+| Know what could go wrong | [risk-register.md](docs/kickoff/risk-register.md) |
+| Know what's still unvalidated | [assumptions.md](docs/kickoff/assumptions.md) |
+| Decode project vocabulary | [glossary.md](docs/kickoff/glossary.md) |
+
+## Contributing
+
+This is a solo + AI-assistant development project targeting v1. Issues and PRs are welcome once the repo hits M12 / first public release; for now the roadmap is fixed and the codebase changes on a daily cadence.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
+
+Logo and brand name © 2026 SliilS. Trademark usage restrictions apply even under MIT.

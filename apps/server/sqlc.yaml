@@ -1,0 +1,21 @@
+version: "2"
+sql:
+  - engine: postgresql
+    queries: internal/db/queries
+    schema: migrations
+    gen:
+      go:
+        package: sqlcgen
+        out: internal/db/sqlcgen
+        sql_package: pgx/v5
+        emit_json_tags: false
+        emit_prepared_queries: false
+        emit_interface: true
+        emit_exact_table_names: false
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        overrides:
+          - db_type: "pg_catalog.int8"
+            go_type: "int64"
+          - db_type: "citext"
+            go_type: "string"

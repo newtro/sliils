@@ -1,0 +1,40 @@
+# SliilS — LiveKit dev config (M8).
+#
+# Listens only on 127.0.0.1 for local-only development. For production,
+# bind to the public interface and add a TURN server (Coturn) for users
+# behind strict NATs. LiveKit falls back to peer-to-peer when possible,
+# so same-LAN calls work fine without TURN.
+#
+# Keys / secrets:
+#   The api_key + api_secret pair below is paired with
+#   SLIILS_LIVEKIT_API_KEY / SLIILS_LIVEKIT_API_SECRET in apps/server/.env.
+#   LiveKit validates every join token's HMAC against the matching secret,
+#   so these two files must stay in lockstep. Rotate both together.
+
+port: 7880
+bind_addresses:
+  - 127.0.0.1
+
+rtc:
+  # Local dev: let LiveKit negotiate ports dynamically in this range.
+  # Production deploys typically pin a TCP fallback on 7881 and open a
+  # UDP range in the host firewall; both are documented in deploy docs.
+  tcp_port: 7881
+  port_range_start: 50000
+  port_range_end: 60000
+  use_external_ip: false
+  # No TURN on localhost — same-LAN clients reach the SFU directly.
+
+# Single API key for development. NEVER reuse these in production.
+keys:
+  devkey: sliils-local-livekit-secret-0123456789abcdef0123456789abcdef
+
+# Room defaults. Empty rooms auto-close after 5 min of inactivity so
+# long-lived rooms don't pile up on the server. Empty_timeout is an
+# unsigned integer in seconds (not a Go duration string).
+room:
+  auto_create: true
+  empty_timeout: 300
+  max_participants: 25
+
+log_level: info

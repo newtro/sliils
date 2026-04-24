@@ -1,0 +1,19 @@
+{
+  "name": "@sliils/desktop",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SliilS desktop app (Tauri 2 wrapping the web shell)",
+  "scripts": {
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build",
+    "lint": "node -e \"console.log('desktop: no-op lint at M0 (Rust uses cargo fmt/clippy)')\"",
+    "lint:fix": "node -e \"console.log('desktop: no-op')\"",
+    "typecheck": "node -e \"console.log('desktop: no TypeScript yet')\"",
+    "build": "node -e \"console.log('desktop: run pnpm --filter @sliils/desktop tauri:build for a real build')\"",
+    "test": "node -e \"console.log('desktop: no JS tests; use cargo test in src-tauri/ for Rust-side tests')\""
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.2.0"
+  }
+}

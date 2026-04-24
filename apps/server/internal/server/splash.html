@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>SliilS is running</title>
+  <style>
+    :root {
+      --sl-navy: #1A2D43;
+      --sl-navy-deep: #0F1B2A;
+      --sl-green: #5BB85C;
+      --sl-blue: #3B7DD8;
+      --sl-teal: #27A8AC;
+      --sl-surface: #FBFBFD;
+      --sl-muted: #6B7A8F;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { height: 100%; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: radial-gradient(ellipse at top, rgba(59,125,216,0.08), transparent 60%),
+                  radial-gradient(ellipse at bottom right, rgba(91,184,92,0.08), transparent 55%),
+                  var(--sl-surface);
+      color: var(--sl-navy);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 24px;
+    }
+    .card {
+      max-width: 560px;
+      width: 100%;
+      background: #fff;
+      border: 1px solid rgba(26, 45, 67, 0.08);
+      border-radius: 12px;
+      padding: 40px 48px;
+      box-shadow: 0 4px 24px rgba(26, 45, 67, 0.06);
+      text-align: center;
+    }
+    .wordmark {
+      font-size: 44px;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: var(--sl-navy);
+      margin-bottom: 8px;
+      display: inline-flex;
+      align-items: baseline;
+    }
+    .wordmark .g { color: var(--sl-green); }
+    .wordmark .b { color: var(--sl-blue); }
+    .tagline {
+      color: var(--sl-muted);
+      font-size: 15px;
+      margin-bottom: 24px;
+    }
+    .badge {
+      display: inline-block;
+      padding: 4px 12px;
+      border-radius: 9999px;
+      background: rgba(91, 184, 92, 0.14);
+      color: #2d7a2e;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      margin-bottom: 24px;
+    }
+    .status {
+      margin-top: 24px;
+      padding: 16px;
+      background: var(--sl-surface);
+      border-radius: 8px;
+      text-align: left;
+      font-family: 'JetBrains Mono', 'SF Mono', Consolas, monospace;
+      font-size: 13px;
+      color: var(--sl-navy);
+    }
+    .status .row { display: flex; justify-content: space-between; padding: 2px 0; }
+    .status .row .k { color: var(--sl-muted); }
+    .status .row .v { color: var(--sl-navy); font-weight: 600; }
+    .links { margin-top: 24px; display: flex; justify-content: center; gap: 16px; }
+    .links a {
+      color: var(--sl-blue);
+      text-decoration: none;
+      font-size: 14px;
+      font-weight: 500;
+    }
+    .links a:hover { text-decoration: underline; }
+    .footer {
+      margin-top: 24px;
+      color: var(--sl-muted);
+      font-size: 12px;
+    }
+    .dot {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--sl-green);
+      margin-right: 6px;
+      vertical-align: middle;
+      box-shadow: 0 0 0 3px rgba(91,184,92,0.2);
+    }
+  </style>
+</head>
+<body>
+  <main class="card">
+    <div class="wordmark">Sl<span class="g">i</span><span class="b">i</span>lS</div>
+    <div class="tagline">Self-hosted team collaboration &middot; no per-seat tax</div>
+    <div class="badge"><span class="dot"></span>Server is running</div>
+    <div class="status">
+      <div class="row"><span class="k">service</span><span class="v">sliils-app</span></div>
+      <div class="row"><span class="k">milestone</span><span class="v">M0 &mdash; Bootstrap</span></div>
+      <div class="row"><span class="k">health</span><span class="v"><a href="/healthz" style="color:var(--sl-blue);">/healthz</a></span></div>
+      <div class="row"><span class="k">ready</span><span class="v"><a href="/readyz" style="color:var(--sl-blue);">/readyz</a></span></div>
+      <div class="row"><span class="k">api</span><span class="v"><a href="/api/v1/ping" style="color:var(--sl-blue);">/api/v1/ping</a></span></div>
+    </div>
+    <div class="links">
+      <a href="https://sliils.com">sliils.com</a>
+      <a href="https://github.com/sliils/sliils">github</a>
+    </div>
+    <div class="footer">&copy; 2026 SliilS contributors</div>
+  </main>
+</body>
+</html>

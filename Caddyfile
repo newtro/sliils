@@ -1,0 +1,44 @@
+# SliilS Caddy config
+#
+# At M0 we serve the app over plain HTTP on :80 for local `docker compose up`.
+# For production set SLIILS_DOMAIN in .env and Caddy will auto-provision TLS.
+
+{
+  # Disable automatic HTTPS on localhost by default; re-enable per-site.
+  auto_https off
+}
+
+:80 {
+  encode zstd gzip
+
+  # /healthz and /readyz pass through untouched.
+  handle_path /healthz* {
+    reverse_proxy sliils-app:8080
+  }
+  handle_path /readyz* {
+    reverse_proxy sliils-app:8080
+  }
+
+  # WebSocket gateway (later milestones).
+  @websocket {
+    header Connection *Upgrade*
+    header Upgrade    websocket
+  }
+  reverse_proxy @websocket sliils-app:8080
+
+  # Everything else → app server.
+  reverse_proxy sliils-app:8080
+
+  header {
+    Strict-Transport-Security "max-age=31536000"
+    X-Content-Type-Options    "nosniff"
+    X-Frame-Options           "DENY"
+    Referrer-Policy           "strict-origin-when-cross-origin"
+  }
+}
+
+# Production block - uncomment and set SLIILS_DOMAIN in .env for auto-TLS.
+# {$SLIILS_DOMAIN} {
+#   encode zstd gzip
+#   reverse_proxy sliils-app:8080
+# }

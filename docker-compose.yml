@@ -1,0 +1,93 @@
+# SliilS — Docker Compose stack (M0 subset)
+#
+# M0 ships the four services named in the roadmap: caddy, postgres, meilisearch,
+# sliils-app. Later milestones add LiveKit, Coturn, Collabora, Y-Sweet, SeaweedFS,
+# and clamd as the features that need them land.
+#
+# Usage:
+#   cp .env.example .env      # fill in secrets first
+#   docker compose up -d
+
+services:
+  sliils-app:
+    build:
+      context: ./apps/server
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${SLIILS_VERSION:-dev}
+    image: sliils/app:${SLIILS_VERSION:-dev}
+    container_name: sliils-app
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      meilisearch:
+        condition: service_started
+    environment:
+      SLIILS_LISTEN_ADDR: ":8080"
+      SLIILS_LOG_LEVEL: ${SLIILS_LOG_LEVEL:-info}
+      SLIILS_LOG_FORMAT: json
+      SLIILS_DATABASE_URL: postgres://sliils:${POSTGRES_PASSWORD}@postgres:5432/sliils?sslmode=disable
+      SLIILS_MEILI_URL: http://meilisearch:7700
+      SLIILS_MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+    expose:
+      - "8080"
+    networks:
+      - sliils
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: sliils-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sliils
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: sliils
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sliils -d sliils"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    networks:
+      - sliils
+
+  meilisearch:
+    image: getmeili/meilisearch:v1.12
+    container_name: sliils-meili
+    restart: unless-stopped
+    environment:
+      MEILI_ENV: production
+      MEILI_MASTER_KEY: ${MEILI_MASTER_KEY}
+      MEILI_NO_ANALYTICS: "true"
+    volumes:
+      - meili-data:/meili_data
+    networks:
+      - sliils
+
+  caddy:
+    image: caddy:2
+    container_name: sliils-caddy
+    restart: unless-stopped
+    depends_on:
+      - sliils-app
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - sliils
+
+networks:
+  sliils:
+    driver: bridge
+
+volumes:
+  pgdata:
+  meili-data:
+  caddy-data:
+  caddy-config:

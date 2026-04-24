@@ -1,0 +1,9 @@
+bin/
+*.exe
+*.test
+*.out
+coverage.*
+.env
+.env.*
+Dockerfile
+.dockerignore

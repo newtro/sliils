@@ -1,0 +1,82 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+.pnp.*
+
+# Build outputs
+dist/
+build/
+out/
+.next/
+.vite/
+.turbo/
+.tauri/
+target/
+
+# Go
+/apps/server/bin/
+/apps/server/sliils-app
+/apps/server/sliils-app.exe
+/apps/server/coverage.out
+/apps/server/coverage.html
+
+# Test / coverage
+coverage/
+.nyc_output/
+*.lcov
+
+# Editor
+.vscode/*
+!.vscode/settings.json.example
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Docker
+docker-compose.override.yml
+
+# Runtime data volumes
+data/
+pgdata/
+meili-data/
+seaweedfs-data/
+livekit-recordings/
+dumps/
+
+# Unpublished asset source dir (keep locally, don't commit)
+original-assests/
+
+# No ad-hoc screenshots at repo root — put them in docs/screenshots/
+/*.png
+/*.jpg
+/*.jpeg
+
+# Local tooling artifacts that are never useful to other devs
+.claude/
+.mcp.json
+.playwright-mcp/
+
+# Logs
+*.log
+logs/
+
+# Expo
+apps/mobile/.expo/
+apps/mobile/dist/
+apps/mobile/web-build/
+
+# Tauri
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/Cargo.lock
+apps/desktop/src-tauri/gen/

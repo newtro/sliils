@@ -1,0 +1,45 @@
+{
+  "name": "sliils",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "SliilS - self-hosted, multi-tenant Slack/Teams alternative",
+  "license": "MIT",
+  "packageManager": "pnpm@10.29.2",
+  "engines": {
+    "node": ">=22.0.0",
+    "pnpm": ">=10.0.0"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @sliils/web dev",
+    "dev:server": "cd apps/server && go run ./cmd/sliils-app",
+    "build": "pnpm -r --filter=!@sliils/mobile --filter=!@sliils/desktop build",
+    "build:all": "pnpm -r build",
+    "lint": "pnpm -r --parallel lint",
+    "lint:fix": "pnpm -r --parallel lint:fix",
+    "test": "pnpm -r --parallel test",
+    "typecheck": "pnpm -r --parallel typecheck",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\" --ignore-path .gitignore",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md,yml,yaml}\" --ignore-path .gitignore",
+    "go:test": "cd apps/server && go test ./...",
+    "go:lint": "cd apps/server && golangci-lint run ./...",
+    "go:build": "cd apps/server && go build -o bin/sliils-app ./cmd/sliils-app",
+    "ci:all": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm go:lint && pnpm go:test && pnpm go:build"
+  },
+  "devDependencies": {
+    "@typescript-eslint/eslint-plugin": "^8.19.0",
+    "@typescript-eslint/parser": "^8.19.0",
+    "@eslint/js": "^9.17.0",
+    "eslint": "^9.17.0",
+    "eslint-config-prettier": "^9.1.0",
+    "eslint-plugin-react": "^7.37.3",
+    "eslint-plugin-react-hooks": "^5.1.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  }
+}

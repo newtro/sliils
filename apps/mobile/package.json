@@ -1,0 +1,18 @@
+{
+  "name": "@sliils/mobile",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SliilS mobile app (Expo + React Native, New Architecture)",
+  "main": "expo-router/entry",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo run:android",
+    "ios": "expo run:ios",
+    "web": "expo start --web",
+    "lint": "node -e \"console.log('mobile: no-op lint at M0 (add expo lint once app has source)')\"",
+    "lint:fix": "node -e \"console.log('mobile: no-op')\"",
+    "typecheck": "node -e \"console.log('mobile: no TypeScript source yet at M0')\"",
+    "build": "node -e \"console.log('mobile: production builds use EAS: pnpm --filter @sliils/mobile eas build')\"",
+    "test": "node -e \"console.log('mobile: no Jest tests yet at M0')\""
+  }
+}
