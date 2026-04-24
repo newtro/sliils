@@ -13,6 +13,7 @@ import { apiFetch } from '../api/client';
 import { listMyWorkspaces } from '../api/workspaces';
 import { useAuth } from '../auth/AuthContext';
 import { InviteDialog } from '../components/InviteDialog';
+import { WorkspaceRail } from '../components/WorkspaceRail';
 
 interface AdminMember {
   user_id: number;
@@ -83,7 +84,9 @@ export function AdminPage(): ReactElement {
   }
 
   return (
-    <div style={{ padding: 24, maxWidth: 960, margin: '0 auto' }}>
+    <div style={{ display: 'flex', height: '100vh' }}>
+      <WorkspaceRail activeSlug={slug} />
+      <div style={{ flex: 1, overflow: 'auto', padding: 24, maxWidth: 960, margin: '0 auto' }}>
       <header
         style={{
           display: 'flex',
@@ -193,6 +196,7 @@ export function AdminPage(): ReactElement {
           onClose={() => setInviteOpen(false)}
         />
       )}
+      </div>
     </div>
   );
 }

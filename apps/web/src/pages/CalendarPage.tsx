@@ -31,6 +31,7 @@ import { listMyWorkspaces, listWorkspaceMembers } from '../api/workspaces';
 import type { WorkspaceMember } from '../api/workspaces';
 import { useAuth } from '../auth/AuthContext';
 import { ScheduleEventDialog } from '../components/ScheduleEventDialog';
+import { WorkspaceRail } from '../components/WorkspaceRail';
 
 const locales = { 'en-US': enUS };
 const localizer = dateFnsLocalizer({
@@ -150,7 +151,9 @@ export function CalendarPage(): ReactElement {
   if (!current) return <Navigate to="/" replace />;
 
   return (
-    <div className="sl-calendar-shell">
+    <div style={{ display: 'flex', height: '100vh' }}>
+      <WorkspaceRail activeSlug={slug} />
+      <div className="sl-calendar-shell" style={{ flex: 1, overflow: 'auto' }}>
       <header className="sl-calendar-header">
         <button
           type="button"
@@ -233,6 +236,7 @@ export function CalendarPage(): ReactElement {
           }}
         />
       )}
+      </div>
     </div>
   );
 }

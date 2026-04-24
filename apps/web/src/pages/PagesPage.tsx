@@ -18,6 +18,7 @@ import { PageEditor } from '../components/PageEditor';
 import { PageSidebar } from '../components/PageSidebar';
 import { PageCommentsPanel } from '../components/PageCommentsPanel';
 import { PageHistoryPanel } from '../components/PageHistoryPanel';
+import { WorkspaceRail } from '../components/WorkspaceRail';
 
 export function PagesPage(): ReactElement {
   const { user, loading: authLoading } = useAuth();
@@ -76,7 +77,8 @@ export function PagesPage(): ReactElement {
   if (!mshipQuery.isLoading && !current) return <Navigate to="/" replace />;
 
   return (
-    <div style={{ display: 'flex', height: 'calc(100vh - 64px)' }}>
+    <div style={{ display: 'flex', height: '100vh' }}>
+      <WorkspaceRail activeSlug={slug} />
       <div style={{ width: 280, borderRight: '1px solid #eee', overflow: 'auto' }}>
         <PageSidebar
           pages={pagesQuery.data ?? []}

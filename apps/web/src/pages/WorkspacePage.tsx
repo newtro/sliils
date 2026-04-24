@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router';
+import { Link, Navigate, useParams } from 'react-router';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { useAuth } from '../auth/AuthContext';
@@ -21,20 +21,21 @@ import type { IncomingCall } from '../components/IncomingCallBanner';
 import { SearchOverlay } from '../components/SearchOverlay';
 import { ThreadPanel } from '../components/ThreadPanel';
 import { WorkspacePrefs } from '../components/WorkspacePrefs';
-import { ThemeToggle } from '../theme/ThemeToggle';
+import { WorkspaceRail } from '../components/WorkspaceRail';
+import { CreateChannelDialog } from '../components/CreateChannelDialog';
 import { useRealtime } from '../realtime/useRealtime';
 import type { RealtimeEvent } from '../realtime/useRealtime';
 
 export function WorkspacePage(): ReactElement {
-  const { user, loading: authLoading, logout } = useAuth();
+  const { user, loading: authLoading } = useAuth();
   const { slug = '' } = useParams();
-  const navigate = useNavigate();
 
   const [selectedChannelID, setSelectedChannelID] = useState<number | null>(null);
   const [openThreadID, setOpenThreadID] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
+  const [newChannelOpen, setNewChannelOpen] = useState(false);
   const [pendingScrollMessageID, setPendingScrollMessageID] = useState<number | null>(null);
 
   // Call state (M8). `activeCall` is the meeting the user is currently
@@ -302,56 +303,7 @@ export function WorkspacePage(): ReactElement {
 
   return (
     <div className={`sl-ws-shell ${openThreadID !== null ? 'with-thread' : ''}`}>
-      <aside className="sl-ws-rail" aria-label="Workspace switcher">
-        <button
-          type="button"
-          className="sl-ws-brand"
-          title="SliilS home"
-          aria-label="SliilS home"
-          onClick={() => navigate('/')}
-        >
-          <img src="/favicon.png" alt="" />
-        </button>
-        <div className="sl-ws-rail-sep" aria-hidden="true" />
-        {memberships?.map((m) => (
-          <Link
-            key={m.workspace.id}
-            to={`/w/${m.workspace.slug}`}
-            className={`sl-ws-rail-icon ${m.workspace.slug === slug ? 'active' : ''}`}
-            title={m.workspace.name}
-            aria-current={m.workspace.slug === slug ? 'true' : undefined}
-          >
-            {m.workspace.name[0]?.toUpperCase() ?? '?'}
-          </Link>
-        ))}
-        <div className="sl-ws-rail-spacer" />
-        <div className="sl-ws-rail-bottom">
-          <ThemeToggle />
-          <button
-            type="button"
-            className="sl-ws-rail-icon sl-ws-rail-icon-btn"
-            title="Sign out"
-            aria-label="Sign out"
-            onClick={logout}
-          >
-            <svg
-              width="18"
-              height="18"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
-              <polyline points="16 17 21 12 16 7" />
-              <line x1="21" y1="12" x2="9" y2="12" />
-            </svg>
-          </button>
-        </div>
-      </aside>
+      <WorkspaceRail activeSlug={slug} />
 
       <nav className="sl-ws-pane" aria-label={`${current?.workspace.name ?? slug} navigation`}>
         <header className="sl-ws-pane-header">
@@ -395,45 +347,21 @@ export function WorkspacePage(): ReactElement {
           )}
         </header>
 
-        {current && (
-          <section className="sl-ws-section">
-            <div className="sl-ws-section-label">Workspace</div>
-            <ul className="sl-ws-navlist">
-              <li>
-                <button
-                  type="button"
-                  className="sl-ws-navitem"
-                  onClick={() => navigate(`/w/${current.workspace.slug}/pages`)}
-                >
-                  Pages
-                </button>
-              </li>
-              <li>
-                <button
-                  type="button"
-                  className="sl-ws-navitem"
-                  onClick={() => navigate(`/w/${current.workspace.slug}/calendar`)}
-                >
-                  Calendar
-                </button>
-              </li>
-              {(current.role === 'owner' || current.role === 'admin') && (
-                <li>
-                  <button
-                    type="button"
-                    className="sl-ws-navitem"
-                    onClick={() => navigate(`/w/${current.workspace.slug}/admin`)}
-                  >
-                    Admin
-                  </button>
-                </li>
-              )}
-            </ul>
-          </section>
-        )}
-
         <section className="sl-ws-section">
-          <div className="sl-ws-section-label">Channels</div>
+          <div className="sl-ws-section-header">
+            <div className="sl-ws-section-label">Channels</div>
+            {current && (current.role === 'owner' || current.role === 'admin') && (
+              <button
+                type="button"
+                className="sl-ws-section-action"
+                onClick={() => setNewChannelOpen(true)}
+                aria-label="Create a channel"
+                title="Create a channel"
+              >
+                +
+              </button>
+            )}
+          </div>
           <ul className="sl-ws-channel-list">
             {channelsQuery.isLoading && <li className="sl-muted">Loading…</li>}
             {channels.map((c) => {
@@ -637,6 +565,15 @@ export function WorkspacePage(): ReactElement {
           call={ringingCall}
           onAnswer={onAnswerRing}
           onDismiss={() => setRingingCall(null)}
+        />
+      )}
+
+      {current && (
+        <CreateChannelDialog
+          workspaceSlug={current.workspace.slug}
+          open={newChannelOpen}
+          onClose={() => setNewChannelOpen(false)}
+          onCreated={(id) => setSelectedChannelID(id)}
         />
       )}
     </div>

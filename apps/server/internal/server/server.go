@@ -241,6 +241,7 @@ func (s *Server) routes() {
 	s.mountBotAPI(api)
 	s.mountSlashCommands(api)
 	s.mountAdmin(api)
+	s.mountChannels(api)
 }
 
 func (s *Server) splashPage(c echo.Context) error {

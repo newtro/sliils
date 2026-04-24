@@ -68,6 +68,16 @@ export function listWorkspaceChannels(slug: string): Promise<Channel[]> {
   return apiFetch<Channel[]>(`/workspaces/${encodeURIComponent(slug)}/channels`);
 }
 
+export function createWorkspaceChannel(
+  slug: string,
+  input: { name: string; topic?: string; description?: string },
+): Promise<Channel> {
+  return apiFetch<Channel>(`/workspaces/${encodeURIComponent(slug)}/channels`, {
+    method: 'POST',
+    body: JSON.stringify(input),
+  });
+}
+
 export function listWorkspaceMembers(slug: string): Promise<WorkspaceMember[]> {
   return apiFetch<WorkspaceMember[]>(`/workspaces/${encodeURIComponent(slug)}/members`);
 }
