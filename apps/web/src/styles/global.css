@@ -504,7 +504,9 @@ button {
   letter-spacing: -0.003em;
 }
 
-.sl-field input,
+/* Applies to text-like inputs only — checkboxes and radios keep their
+ * native sizing so they don't stretch to 100% and blow out flex layouts. */
+.sl-field input:not([type='checkbox']):not([type='radio']),
 .sl-field textarea,
 .sl-field select {
   width: 100%;
@@ -3581,4 +3583,54 @@ button {
 }
 .sl-dialog-secondary:hover {
   background: var(--surface-hover);
+}
+
+/* ---- Invite workspace multi-select ----------------------------------- */
+
+.sl-invite-ws-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px 0;
+  max-height: 180px;
+  overflow-y: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+}
+.sl-invite-ws-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 10px;
+  cursor: pointer;
+  transition: background var(--t-fast) var(--ease);
+}
+.sl-invite-ws-item:hover {
+  background: var(--surface-hover);
+}
+.sl-invite-ws-item input[type='checkbox'] {
+  accent-color: var(--accent);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+.sl-invite-ws-label {
+  display: flex;
+  flex: 1;
+  justify-content: space-between;
+  align-items: center;
+  cursor: pointer;
+  color: var(--text);
+  font-size: 14px;
+}
+.sl-invite-ws-name {
+  font-weight: 500;
+}
+.sl-invite-ws-role {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--surface-raised);
 }
