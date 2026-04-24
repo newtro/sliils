@@ -41,6 +41,14 @@ type InviteDTO struct {
 	ExpiresAt           time.Time `json:"expires_at"`
 	CreatorDisplayName  string    `json:"creator_display_name,omitempty"`
 	CreatorEmail        string    `json:"creator_email,omitempty"`
+	// Email delivery status from the initial create. Only set on the
+	// create response; not populated for list/pending views.
+	//   ""        — no email was attempted (link-only invite)
+	//   "sent"    — provider accepted the message for delivery
+	//   "failed"  — provider rejected; EmailError has the reason
+	//   "skipped" — server has no email sender wired up
+	EmailStatus string `json:"email_status,omitempty"`
+	EmailError  string `json:"email_error,omitempty"`
 }
 
 // InvitePreviewDTO is what an unauthenticated visitor sees at /invite/:token
@@ -162,22 +170,34 @@ func (s *Server) createInvite(c echo.Context) error {
 
 	acceptURL := fmt.Sprintf("%s/invite/%s", s.cfg.PublicBaseURL, token)
 
-	// Fire the email best-effort — the DB row is the source of truth, so an
-	// email failure shouldn't block the invite. Admins get the token back
-	// on the API response and can share it manually.
-	if req.Email != "" && s.email != nil {
-		go func(recipient, wsName, inviterName, url string) {
-			ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-			defer cancel()
-			msg := email.WorkspaceInvite(recipient, wsName, inviterName, url)
-			if err := s.email.Send(ctx, msg); err != nil {
+	// Send the email synchronously so the caller knows whether it
+	// actually dispatched. A failure (Resend sandbox restriction,
+	// missing config, network) no longer fails the invite — the DB
+	// row is still the source of truth and the admin can copy the
+	// shareable link — but it's reported back in the response so the
+	// UI can surface a real status instead of a false "sent" claim.
+	var emailStatus, emailError string
+	if req.Email != "" {
+		switch {
+		case s.email == nil:
+			emailStatus = "skipped"
+			emailError = "email sender is not configured on this server"
+		default:
+			sendCtx, cancel := context.WithTimeout(c.Request().Context(), 10*time.Second)
+			msg := email.WorkspaceInvite(req.Email, ws.Name, user.DisplayName, acceptURL)
+			if err := s.email.Send(sendCtx, msg); err != nil {
+				emailStatus = "failed"
+				emailError = err.Error()
 				s.logger.Warn("invite email send failed",
 					"error", err.Error(),
 					"workspace_id", ws.ID,
-					"recipient", recipient,
+					"recipient", req.Email,
 				)
+			} else {
+				emailStatus = "sent"
 			}
-		}(req.Email, ws.Name, user.DisplayName, acceptURL)
+			cancel()
+		}
 	}
 
 	dto := inviteDTO(sqlcgen.ListPendingInvitesForWorkspaceRow{
@@ -193,6 +213,8 @@ func (s *Server) createInvite(c echo.Context) error {
 		CreatorEmail:       &user.Email,
 	}, true)
 	dto.Token = token // admin caller sees the token so they can copy-paste if needed
+	dto.EmailStatus = emailStatus
+	dto.EmailError = emailError
 	return c.JSON(http.StatusCreated, dto)
 }
 

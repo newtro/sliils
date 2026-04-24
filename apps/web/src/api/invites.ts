@@ -19,6 +19,11 @@ export interface Invite {
   expires_at: string;
   creator_display_name?: string;
   creator_email?: string;
+  // Only populated on the create response — reports whether the email
+  // actually dispatched so the UI can surface a real status instead of
+  // a blanket "sent" claim.
+  email_status?: 'sent' | 'failed' | 'skipped' | '';
+  email_error?: string;
 }
 
 export interface InvitePreview {

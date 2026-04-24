@@ -188,22 +188,47 @@ export function InviteDialog({
     }
 
     if (results.length > 0) {
-      // Prepend new invites to the top so they render first.
       setCreated((prev) => [...results, ...prev]);
-      // If the primary workspace got a new invite, refresh its pending
-      // list so the existing section reflects reality too.
       if (results.some((r) => r.workspace_slug === workspaceSlug)) {
         qc.invalidateQueries({ queryKey: ['workspace', workspaceSlug, 'invites'] });
       }
-      const summary =
-        email.trim()
-          ? `Sent ${results.length} invitation${results.length === 1 ? '' : 's'}.`
-          : `Created ${results.length} link${results.length === 1 ? '' : 's'}. Copy below.`;
-      setNotice(summary);
+
+      // Distinguish email-dispatch outcomes so the admin knows whether
+      // to share the link manually.
+      if (email.trim()) {
+        const sent = results.filter((r) => r.email_status === 'sent').length;
+        const failed = results.filter((r) => r.email_status === 'failed');
+        const skipped = results.filter((r) => r.email_status === 'skipped').length;
+        const parts: string[] = [];
+        if (sent > 0) parts.push(`${sent} email${sent === 1 ? '' : 's'} sent`);
+        if (failed.length > 0) {
+          parts.push(
+            `${failed.length} email${failed.length === 1 ? '' : 's'} could not be sent — share the link${failed.length === 1 ? '' : 's'} below`,
+          );
+        }
+        if (skipped > 0) {
+          parts.push(
+            `${skipped} skipped (email not configured on this server) — share the link${skipped === 1 ? '' : 's'} below`,
+          );
+        }
+        setNotice(parts.join(' · '));
+        // Surface the specific provider error so the admin can act
+        // (e.g. verify a domain on Resend, check SMTP creds).
+        if (failed.length > 0) {
+          const firstErr = failed.find((f) => f.email_error)?.email_error;
+          if (firstErr) {
+            setError(`Email provider says: ${firstErr}`);
+          }
+        }
+      } else {
+        setNotice(
+          `Created ${results.length} link${results.length === 1 ? '' : 's'}. Copy below.`,
+        );
+      }
       setEmail('');
     }
     if (failures.length > 0) {
-      setError(failures.join('\n'));
+      setError((prev) => (prev ? `${prev}\n${failures.join('\n')}` : failures.join('\n')));
     }
     setSubmitting(false);
   }
@@ -366,30 +391,56 @@ export function InviteDialog({
               <h3>Just created</h3>
             </div>
             <ul className="sl-invite-list">
-              {created.map((inv) => (
-                <li key={`${inv.workspace_slug}-${inv.id}`} className="sl-invite-row">
-                  <div className="sl-invite-row-primary">
-                    <div className="sl-invite-row-name">
-                      {inv.email || <em className="sl-muted">Shareable link</em>}
-                      <span className="sl-muted"> &middot; {inv.workspace_name}</span>
-                    </div>
-                    <div className="sl-invite-row-meta">
-                      {inv.role} · expires {new Date(inv.expires_at).toLocaleDateString()}
-                    </div>
-                  </div>
-                  <div className="sl-invite-row-actions">
-                    {inv.token && (
-                      <button
-                        type="button"
-                        className="sl-linkbtn"
-                        onClick={() => copy(inviteLinkFor(inv.token!))}
+              {created.map((inv) => {
+                let emailBadge: ReactElement | null = null;
+                if (inv.email) {
+                  if (inv.email_status === 'sent') {
+                    emailBadge = (
+                      <span className="sl-invite-email-badge ok">email sent</span>
+                    );
+                  } else if (inv.email_status === 'failed') {
+                    emailBadge = (
+                      <span
+                        className="sl-invite-email-badge bad"
+                        title={inv.email_error ?? undefined}
                       >
-                        Copy link
-                      </button>
-                    )}
-                  </div>
-                </li>
-              ))}
+                        email failed — share the link
+                      </span>
+                    );
+                  } else if (inv.email_status === 'skipped') {
+                    emailBadge = (
+                      <span className="sl-invite-email-badge bad">
+                        email not configured — share the link
+                      </span>
+                    );
+                  }
+                }
+                return (
+                  <li key={`${inv.workspace_slug}-${inv.id}`} className="sl-invite-row">
+                    <div className="sl-invite-row-primary">
+                      <div className="sl-invite-row-name">
+                        {inv.email || <em className="sl-muted">Shareable link</em>}
+                        <span className="sl-muted"> &middot; {inv.workspace_name}</span>
+                      </div>
+                      <div className="sl-invite-row-meta">
+                        {inv.role} · expires {new Date(inv.expires_at).toLocaleDateString()}
+                        {emailBadge && <> &middot; {emailBadge}</>}
+                      </div>
+                    </div>
+                    <div className="sl-invite-row-actions">
+                      {inv.token && (
+                        <button
+                          type="button"
+                          className="sl-linkbtn"
+                          onClick={() => copy(inviteLinkFor(inv.token!))}
+                        >
+                          Copy link
+                        </button>
+                      )}
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </section>
         )}
