@@ -23,8 +23,6 @@ export function CreateChannelDialog({
   const [topic, setTopic] = useState('');
   const [error, setError] = useState<string | null>(null);
 
-  // Normalise the name to the same ruleset the server enforces
-  // (lowercase, a-z0-9-), so users see the preview match what lands.
   const normalised = name
     .toLowerCase()
     .replace(/\s+/g, '-')
@@ -82,25 +80,30 @@ export function CreateChannelDialog({
 
   return (
     <div
+      className="sl-dialog-overlay"
       role="dialog"
       aria-modal="true"
       aria-label="Create a channel"
-      style={overlayStyle}
       onClick={onClose}
     >
-      <div style={panelStyle} onClick={(e) => e.stopPropagation()}>
-        <header style={headerStyle}>
-          <h2 style={{ margin: 0, fontSize: 18 }}>Create a channel</h2>
-          <button type="button" onClick={onClose} style={closeBtn} aria-label="Close">
+      <div className="sl-dialog-panel" onClick={(e) => e.stopPropagation()}>
+        <header className="sl-dialog-head">
+          <h2 className="sl-dialog-title">Create a channel</h2>
+          <button
+            type="button"
+            onClick={onClose}
+            className="sl-dialog-close"
+            aria-label="Close"
+          >
             ×
           </button>
         </header>
 
         <form onSubmit={submit}>
           <label style={{ display: 'block', marginBottom: 12 }}>
-            <span style={labelStyle}>Name</span>
-            <div style={{ display: 'flex', alignItems: 'center' }}>
-              <span style={hashStyle}>#</span>
+            <span className="sl-dialog-label">Name</span>
+            <div style={{ display: 'flex', alignItems: 'stretch' }}>
+              <span className="sl-dialog-hash">#</span>
               <input
                 autoFocus
                 type="text"
@@ -108,38 +111,47 @@ export function CreateChannelDialog({
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. engineering"
                 maxLength={80}
-                style={inputStyle}
+                className="sl-dialog-input"
+                style={{ borderRadius: '0 var(--r-md) var(--r-md) 0' }}
               />
             </div>
-            <div style={helpStyle}>
-              {normalised
-                ? <>Will be created as <strong>#{normalised}</strong></>
-                : 'Lowercase letters, digits, and hyphens.'}
+            <div className="sl-dialog-help">
+              {normalised ? (
+                <>
+                  Will be created as <strong>#{normalised}</strong>
+                </>
+              ) : (
+                'Lowercase letters, digits, and hyphens.'
+              )}
             </div>
           </label>
 
           <label style={{ display: 'block', marginBottom: 16 }}>
-            <span style={labelStyle}>Topic (optional)</span>
+            <span className="sl-dialog-label">Topic (optional)</span>
             <input
               type="text"
               value={topic}
               onChange={(e) => setTopic(e.target.value)}
               placeholder="What is this channel about?"
               maxLength={250}
-              style={inputStyle}
+              className="sl-dialog-input"
             />
           </label>
 
-          {error && <div role="alert" style={errorStyle}>{error}</div>}
+          {error && (
+            <div role="alert" className="sl-dialog-error">
+              {error}
+            </div>
+          )}
 
-          <footer style={footerStyle}>
-            <button type="button" onClick={onClose} style={secondaryBtn}>
+          <footer className="sl-dialog-foot">
+            <button type="button" onClick={onClose} className="sl-dialog-secondary">
               Cancel
             </button>
             <button
               type="submit"
+              className="sl-primary sl-primary-sm"
               disabled={!normalised || createMutation.isPending}
-              style={primaryBtn}
             >
               {createMutation.isPending ? 'Creating…' : 'Create channel'}
             </button>
@@ -149,112 +161,3 @@ export function CreateChannelDialog({
     </div>
   );
 }
-
-// ---- styles (inline for self-containment) ------------------------------
-
-const overlayStyle: React.CSSProperties = {
-  position: 'fixed',
-  inset: 0,
-  background: 'rgba(0,0,0,0.4)',
-  display: 'flex',
-  alignItems: 'center',
-  justifyContent: 'center',
-  zIndex: 1000,
-};
-
-const panelStyle: React.CSSProperties = {
-  width: 440,
-  background: 'var(--surface, #fff)',
-  color: 'var(--text, #1a1a1a)',
-  borderRadius: 8,
-  padding: 20,
-  boxShadow: '0 10px 40px rgba(0,0,0,0.3)',
-};
-
-const headerStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'space-between',
-  alignItems: 'center',
-  marginBottom: 16,
-};
-
-const labelStyle: React.CSSProperties = {
-  display: 'block',
-  fontSize: 12,
-  color: 'var(--text-muted, #666)',
-  marginBottom: 4,
-};
-
-const hashStyle: React.CSSProperties = {
-  padding: '8px 10px',
-  color: 'var(--text-subtle, #999)',
-  background: 'var(--surface-raised, #f6f6f6)',
-  border: '1px solid var(--border, #ddd)',
-  borderRight: 'none',
-  borderRadius: '4px 0 0 4px',
-  fontWeight: 500,
-};
-
-const inputStyle: React.CSSProperties = {
-  width: '100%',
-  padding: '8px 10px',
-  border: '1px solid var(--border, #ddd)',
-  borderRadius: 4,
-  background: 'var(--surface, #fff)',
-  color: 'inherit',
-  fontFamily: 'inherit',
-  fontSize: 14,
-  boxSizing: 'border-box',
-};
-
-const helpStyle: React.CSSProperties = {
-  marginTop: 4,
-  fontSize: 12,
-  color: 'var(--text-muted, #777)',
-};
-
-const errorStyle: React.CSSProperties = {
-  padding: 8,
-  background: 'rgba(200,40,40,0.08)',
-  color: '#a33',
-  borderRadius: 4,
-  marginBottom: 12,
-  fontSize: 13,
-};
-
-const footerStyle: React.CSSProperties = {
-  display: 'flex',
-  justifyContent: 'flex-end',
-  gap: 8,
-  marginTop: 4,
-};
-
-const primaryBtn: React.CSSProperties = {
-  padding: '8px 16px',
-  border: '1px solid #2a4ea4',
-  background: '#2a4ea4',
-  color: '#fff',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontSize: 13,
-};
-
-const secondaryBtn: React.CSSProperties = {
-  padding: '8px 16px',
-  border: '1px solid var(--border, #ddd)',
-  background: 'transparent',
-  color: 'inherit',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontSize: 13,
-};
-
-const closeBtn: React.CSSProperties = {
-  width: 28,
-  height: 28,
-  background: 'transparent',
-  border: 'none',
-  fontSize: 20,
-  cursor: 'pointer',
-  color: 'var(--text-muted, #888)',
-};

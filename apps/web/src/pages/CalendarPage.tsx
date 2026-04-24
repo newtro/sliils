@@ -11,7 +11,7 @@
 
 import { useCallback, useMemo, useState } from 'react';
 import type { ReactElement } from 'react';
-import { Navigate, useNavigate, useParams } from 'react-router';
+import { Navigate, useParams } from 'react-router';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Calendar, dateFnsLocalizer } from 'react-big-calendar';
 import type { SlotInfo, View } from 'react-big-calendar';
@@ -53,7 +53,6 @@ type BigCalendarEvent = {
 export function CalendarPage(): ReactElement {
   const { user, loading: authLoading } = useAuth();
   const { slug = '' } = useParams();
-  const navigate = useNavigate();
   const qc = useQueryClient();
 
   const [view, setView] = useState<View>('week');
@@ -155,13 +154,6 @@ export function CalendarPage(): ReactElement {
       <WorkspaceRail activeSlug={slug} />
       <div className="sl-calendar-shell" style={{ flex: 1, overflow: 'auto' }}>
       <header className="sl-calendar-header">
-        <button
-          type="button"
-          className="sl-linkbtn"
-          onClick={() => navigate(`/w/${slug}`)}
-        >
-          ← {current.workspace.name}
-        </button>
         <h1 className="sl-calendar-title">Calendar</h1>
         <button
           type="button"
@@ -198,7 +190,7 @@ export function CalendarPage(): ReactElement {
                 : 'var(--brand-teal)',
               borderRadius: '4px',
               border: 0,
-              color: '#fff',
+              color: 'var(--accent-fg)',
               padding: '2px 6px',
               fontSize: '12px',
             },

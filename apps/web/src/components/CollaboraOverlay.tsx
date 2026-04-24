@@ -53,7 +53,7 @@ export function CollaboraOverlay({ fileID, filename, onClose }: Props): ReactEle
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0,0,0,0.4)',
+        background: 'color-mix(in srgb, #000 55%, transparent)',
         zIndex: 1000,
         display: 'flex',
         flexDirection: 'column',
@@ -65,26 +65,29 @@ export function CollaboraOverlay({ fileID, filename, onClose }: Props): ReactEle
           alignItems: 'center',
           justifyContent: 'space-between',
           padding: '8px 16px',
-          background: '#fff',
-          borderBottom: '1px solid #eee',
+          background: 'var(--surface)',
+          color: 'var(--text)',
+          borderBottom: '1px solid var(--border)',
         }}
       >
         <div style={{ fontWeight: 600 }}>{filename}</div>
         <button
           type="button"
           onClick={onClose}
-          style={{ padding: '6px 12px', border: '1px solid #ddd', background: '#fff', borderRadius: 4, cursor: 'pointer' }}
+          className="sl-dialog-secondary"
         >
           Close
         </button>
       </div>
-      <div style={{ flex: 1, background: '#fff' }}>
+      <div style={{ flex: 1, background: 'var(--surface)' }}>
         {error && (
-          <div role="alert" style={{ padding: 24, color: '#b00' }}>
+          <div role="alert" style={{ padding: 24, color: '#c44' }}>
             Could not open editor: {error}
           </div>
         )}
-        {!error && !session && <div style={{ padding: 24, color: '#666' }}>Loading editor…</div>}
+        {!error && !session && (
+          <div style={{ padding: 24, color: 'var(--text-muted)' }}>Loading editor…</div>
+        )}
         {!error && session && (
           <iframe
             title={`Collabora editing ${filename}`}

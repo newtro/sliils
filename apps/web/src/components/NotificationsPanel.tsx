@@ -48,15 +48,15 @@ export function NotificationsPanel(): ReactElement {
 
   const [qhStart, setQHStart] = useState<number | null>(null);
   const [qhEnd, setQHEnd] = useState<number | null>(null);
-  const [qhTz, setQHTz] = useState<string>(Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC');
+  const [qhTz, setQHTz] = useState<string>(
+    Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC',
+  );
   const [snoozeMins, setSnoozeMins] = useState<number>(60);
 
   const dndMutation = useMutation({
     mutationFn: (prefs: Parameters<typeof patchDND>[0]) => patchDND(prefs),
   });
 
-  // Re-read browser permission on mount in case it changed outside the
-  // component (e.g. user toggled it in site settings).
   useEffect(() => {
     setBrowserState(getBrowserPushState());
   }, []);
@@ -68,15 +68,13 @@ export function NotificationsPanel(): ReactElement {
 
   return (
     <div style={{ maxWidth: 560 }}>
-      <h3 style={{ marginTop: 0 }}>Notifications</h3>
-
-      <section style={sectionStyle}>
-        <h4 style={{ margin: '0 0 8px' }}>Browser push</h4>
+      <section className="sl-notif-section">
+        <h4>Browser push</h4>
         {browserState === 'unsupported' && (
-          <p style={mutedStyle}>This browser does not support web push.</p>
+          <p className="sl-notif-muted">This browser does not support web push.</p>
         )}
         {browserState === 'denied' && (
-          <p style={{ color: '#a33' }}>
+          <p className="sl-notif-status-bad">
             Notifications are blocked in your browser settings. Un-block SliilS to enable push.
           </p>
         )}
@@ -84,12 +82,12 @@ export function NotificationsPanel(): ReactElement {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             {activeWebDevice ? (
               <>
-                <span style={{ color: '#2a8a2a' }}>✓ Enabled on this device</span>
+                <span className="sl-notif-status-good">Enabled on this device</span>
                 <button
                   type="button"
+                  className="sl-notif-btn"
                   onClick={() => disableMutation.mutate(activeWebDevice.id)}
                   disabled={disableMutation.isPending}
-                  style={btn}
                 >
                   {disableMutation.isPending ? 'Disabling…' : 'Disable'}
                 </button>
@@ -97,79 +95,100 @@ export function NotificationsPanel(): ReactElement {
             ) : (
               <button
                 type="button"
+                className="sl-primary sl-primary-sm"
                 onClick={() => enableMutation.mutate()}
                 disabled={enableMutation.isPending}
-                style={btnPrimary}
               >
                 {enableMutation.isPending ? 'Enabling…' : 'Enable notifications'}
               </button>
             )}
           </div>
         )}
-        {error && <p style={{ color: '#a33', marginTop: 8 }}>{error}</p>}
+        {error && (
+          <p className="sl-notif-status-bad" style={{ marginTop: 8, whiteSpace: 'pre-wrap' }}>
+            {error}
+          </p>
+        )}
       </section>
 
-      <section style={sectionStyle}>
-        <h4 style={{ margin: '0 0 8px' }}>Do not disturb</h4>
+      <section className="sl-notif-section">
+        <h4>Do not disturb</h4>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
-          <span>Snooze for</span>
+          <span className="sl-notif-muted">Snooze for</span>
           <input
             type="number"
             min={5}
             max={1440}
             value={snoozeMins}
             onChange={(e) => setSnoozeMins(Number(e.target.value))}
-            style={{ width: 80 }}
+            className="sl-notif-number"
+            aria-label="Snooze minutes"
           />
-          <span>minutes</span>
+          <span className="sl-notif-muted">minutes</span>
           <button
             type="button"
+            className="sl-notif-btn"
             onClick={() =>
               dndMutation.mutate({
                 snooze_until: new Date(Date.now() + snoozeMins * 60_000).toISOString(),
               })
             }
-            style={btn}
           >
             Snooze
           </button>
           <button
             type="button"
+            className="sl-notif-btn"
             onClick={() => dndMutation.mutate({ snooze_until: '' })}
-            style={btn}
           >
             Clear
           </button>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, auto)', gap: 8, alignItems: 'center' }}>
-          <label>Quiet hours start</label>
+        <div
+          style={{
+            display: 'grid',
+            gridTemplateColumns: 'max-content 1fr',
+            gap: 8,
+            alignItems: 'center',
+          }}
+        >
+          <label className="sl-notif-muted" htmlFor="notif-qh-start">
+            Quiet hours start
+          </label>
           <input
+            id="notif-qh-start"
             type="time"
             value={qhStart !== null ? minutesToHHMM(qhStart) : ''}
             onChange={(e) => setQHStart(e.target.value ? hhmmToMinutes(e.target.value) : null)}
+            className="sl-notif-input"
           />
-          <span />
-          <label>Quiet hours end</label>
+          <label className="sl-notif-muted" htmlFor="notif-qh-end">
+            Quiet hours end
+          </label>
           <input
+            id="notif-qh-end"
             type="time"
             value={qhEnd !== null ? minutesToHHMM(qhEnd) : ''}
             onChange={(e) => setQHEnd(e.target.value ? hhmmToMinutes(e.target.value) : null)}
+            className="sl-notif-input"
           />
-          <span />
-          <label>Time zone</label>
+          <label className="sl-notif-muted" htmlFor="notif-qh-tz">
+            Time zone
+          </label>
           <input
+            id="notif-qh-tz"
             type="text"
             value={qhTz}
             onChange={(e) => setQHTz(e.target.value)}
-            style={{ minWidth: 200 }}
+            className="sl-notif-input"
           />
-          <span />
         </div>
 
         <div style={{ marginTop: 12, display: 'flex', gap: 8 }}>
           <button
             type="button"
+            className="sl-notif-btn"
             onClick={() =>
               dndMutation.mutate({
                 quiet_hours_start: qhStart,
@@ -177,54 +196,42 @@ export function NotificationsPanel(): ReactElement {
                 quiet_hours_tz: qhTz,
               })
             }
-            style={btn}
             disabled={(qhStart === null) !== (qhEnd === null)}
           >
             Save quiet hours
           </button>
           <button
             type="button"
+            className="sl-notif-btn"
             onClick={() => {
               setQHStart(null);
               setQHEnd(null);
               dndMutation.mutate({ quiet_hours_start: null, quiet_hours_end: null });
             }}
-            style={btn}
           >
             Clear
           </button>
         </div>
       </section>
 
-      <section style={sectionStyle}>
-        <h4 style={{ margin: '0 0 8px' }}>Registered devices</h4>
+      <section className="sl-notif-section">
+        <h4>Registered devices</h4>
         {devicesQuery.data && devicesQuery.data.length === 0 && (
-          <p style={mutedStyle}>No devices yet.</p>
+          <p className="sl-notif-muted">No devices yet.</p>
         )}
         <ul style={{ margin: 0, padding: 0, listStyle: 'none' }}>
           {(devicesQuery.data ?? []).map((d: Device) => (
-            <li
-              key={d.id}
-              style={{
-                padding: 8,
-                border: '1px solid #eee',
-                borderRadius: 4,
-                marginBottom: 6,
-                display: 'flex',
-                justifyContent: 'space-between',
-                alignItems: 'center',
-              }}
-            >
+            <li key={d.id} className="sl-notif-device">
               <div>
                 <strong>{d.label || d.platform}</strong>
-                <div style={{ fontSize: 11, color: '#888' }}>
+                <div className="sl-notif-muted" style={{ fontSize: 12 }}>
                   {d.platform} · added {new Date(d.created_at).toLocaleDateString()}
                 </div>
               </div>
               <button
                 type="button"
+                className="sl-notif-btn"
                 onClick={() => disableMutation.mutate(d.id)}
-                style={btn}
               >
                 Remove
               </button>
@@ -235,29 +242,6 @@ export function NotificationsPanel(): ReactElement {
     </div>
   );
 }
-
-const sectionStyle: React.CSSProperties = {
-  padding: 16,
-  borderTop: '1px solid #eee',
-};
-
-const mutedStyle: React.CSSProperties = { color: '#888' };
-
-const btn: React.CSSProperties = {
-  padding: '6px 12px',
-  border: '1px solid #ccc',
-  background: '#fff',
-  borderRadius: 4,
-  cursor: 'pointer',
-  fontSize: 13,
-};
-
-const btnPrimary: React.CSSProperties = {
-  ...btn,
-  background: '#2a4ea4',
-  color: '#fff',
-  border: '1px solid #2a4ea4',
-};
 
 function minutesToHHMM(m: number): string {
   const h = Math.floor(m / 60);

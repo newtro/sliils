@@ -74,22 +74,60 @@ export async function enableWebPush(label?: string): Promise<Device> {
     throw new Error('Server has not configured VAPID keys.');
   }
 
-  // Make sure the SW is registered before we try to subscribe.
-  const reg = await navigator.serviceWorker.register('/sw.js');
+  // Make sure the SW is registered before we try to subscribe. We pass
+  // updateViaCache: 'none' so dev-cycle changes to sw.js pick up
+  // without a hard cache purge.
+  const reg = await navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' });
   await navigator.serviceWorker.ready;
 
-  // Subscribe (or re-use existing — PushManager.subscribe is idempotent
-  // per (scope, applicationServerKey) pair).
+  // Validate VAPID key length up-front so the DOMException we'd
+  // otherwise catch becomes a clean actionable error.
+  const keyBytes = urlBase64ToUint8Array(public_key);
+  if (keyBytes.length !== 65) {
+    throw new Error(
+      `VAPID public key must decode to 65 bytes (got ${keyBytes.length}). ` +
+      `Regenerate keys with: sliils-app genvapid`,
+    );
+  }
+
   // Copy through an ArrayBuffer so TypeScript accepts it (the DOM lib
   // types reject Uint8Array<ArrayBufferLike> because it might be a
   // SharedArrayBuffer — which it never is for our base64 decode).
-  const keyBytes = urlBase64ToUint8Array(public_key);
   const keyBuffer = new ArrayBuffer(keyBytes.length);
   new Uint8Array(keyBuffer).set(keyBytes);
-  const sub = await reg.pushManager.subscribe({
-    userVisibleOnly: true,
-    applicationServerKey: keyBuffer,
-  });
+
+  let sub: PushSubscription;
+  try {
+    // Re-use an existing subscription if one is present for this SW
+    // scope; PushManager.subscribe is idempotent per application
+    // server key, but re-subscribing after a key change fails with a
+    // generic "Push service error" in Chrome. Unsubscribe first when
+    // the existing key doesn't match.
+    const existing = await reg.pushManager.getSubscription();
+    if (existing) {
+      const existingKey = existing.options.applicationServerKey;
+      const matches =
+        existingKey && bufferEqualsBytes(existingKey as ArrayBuffer, keyBytes);
+      if (!matches) {
+        await existing.unsubscribe();
+      }
+    }
+    sub = await reg.pushManager.subscribe({
+      userVisibleOnly: true,
+      applicationServerKey: keyBuffer,
+    });
+  } catch (err) {
+    // Chrome throws "AbortError: Push service error" when it can't
+    // reach the browser's push service (usually a network / Google
+    // reachability issue, sometimes an invalid VAPID key). Surface the
+    // DOMException name so users have something to search for.
+    const dom = err as DOMException;
+    throw new Error(
+      `Push subscription failed: ${dom.name || 'Error'} — ${dom.message || 'unknown'}.\n` +
+      `Check that your browser can reach https://fcm.googleapis.com and that the VAPID ` +
+      `key on the server matches the one in this browser (try "Clear site data" if it doesn't).`,
+    );
+  }
 
   const subJSON = sub.toJSON();
   const p256dh = subJSON.keys?.p256dh;
@@ -124,6 +162,15 @@ function urlBase64ToUint8Array(b64: string): Uint8Array {
   const out = new Uint8Array(raw.length);
   for (let i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
   return out;
+}
+
+function bufferEqualsBytes(buf: ArrayBuffer, bytes: Uint8Array): boolean {
+  if (buf.byteLength !== bytes.length) return false;
+  const view = new Uint8Array(buf);
+  for (let i = 0; i < bytes.length; i++) {
+    if (view[i] !== bytes[i]) return false;
+  }
+  return true;
 }
 
 function inferLabel(): string {

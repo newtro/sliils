@@ -20,53 +20,29 @@ export function PageSidebar({
   isCreating,
 }: Props): ReactElement {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div style={{ padding: 12, borderBottom: '1px solid #eee' }}>
+    <>
+      <div className="sl-pages-sidebar-head">
         <button
           type="button"
           onClick={onCreate}
           disabled={isCreating}
-          style={{
-            width: '100%',
-            padding: '8px 12px',
-            borderRadius: 4,
-            border: '1px solid #ddd',
-            background: isCreating ? '#eee' : '#fff',
-            cursor: isCreating ? 'wait' : 'pointer',
-            textAlign: 'left',
-          }}
+          className="sl-pages-new-btn"
         >
           {isCreating ? t('page.creating') : t('page.new')}
         </button>
       </div>
-      <ul style={{ listStyle: 'none', margin: 0, padding: 0, flex: 1, overflowY: 'auto' }}>
+      <ul className="sl-pages-list">
         {pages.map((p) => {
           const selected = p.id === selectedId;
           return (
-            <li
-              key={p.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                borderBottom: '1px solid #f6f6f6',
-                background: selected ? '#eef5ff' : 'transparent',
-              }}
-            >
+            <li key={p.id} className={`sl-pages-item ${selected ? 'active' : ''}`}>
               <button
                 type="button"
                 onClick={() => onSelect(p.id)}
-                style={{
-                  flex: 1,
-                  padding: '10px 12px',
-                  background: 'transparent',
-                  border: 'none',
-                  textAlign: 'left',
-                  cursor: 'pointer',
-                  fontWeight: selected ? 600 : 400,
-                }}
+                className="sl-pages-item-btn"
               >
                 {p.icon ? <span style={{ marginRight: 6 }}>{p.icon}</span> : null}
-                {p.title || 'Untitled'}
+                {p.title || t('page.untitled')}
               </button>
               <button
                 type="button"
@@ -76,13 +52,7 @@ export function PageSidebar({
                 }}
                 aria-label={`${t('page.archive')} ${p.title || t('page.untitled')}`}
                 title={t('page.archive')}
-                style={{
-                  padding: '0 10px',
-                  background: 'transparent',
-                  border: 'none',
-                  color: '#aaa',
-                  cursor: 'pointer',
-                }}
+                className="sl-pages-item-archive"
               >
                 <span aria-hidden="true">×</span>
               </button>
@@ -90,6 +60,6 @@ export function PageSidebar({
           );
         })}
       </ul>
-    </div>
+    </>
   );
 }

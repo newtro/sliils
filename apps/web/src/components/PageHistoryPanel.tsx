@@ -32,72 +32,54 @@ export function PageHistoryPanel({ pageID }: Props): ReactElement {
   const snapshots = snapshotsQuery.data ?? [];
 
   return (
-    <div style={{ padding: 12, display: 'flex', flexDirection: 'column', height: '100%' }}>
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          justifyContent: 'space-between',
-          marginBottom: 8,
-        }}
-      >
-        <div style={{ fontWeight: 600 }}>History</div>
+    <>
+      <div className="sl-pages-aside-head">
+        <span>History</span>
         <button
           type="button"
+          className="sl-pages-history-btn"
           onClick={() => snapshotMutation.mutate()}
           disabled={snapshotMutation.isPending}
-          style={btn}
         >
           {snapshotMutation.isPending ? 'Saving…' : 'Snapshot'}
         </button>
       </div>
-      <div style={{ flex: 1, overflowY: 'auto' }}>
+      <div className="sl-pages-aside-body">
         {snapshots.length === 0 && (
-          <div style={{ color: '#888', fontSize: 13 }}>
-            No snapshots yet. The server creates one every few minutes when there&rsquo;s activity; click Snapshot to make one now.
+          <div style={{ padding: 16 }} className="sl-muted">
+            No snapshots yet. The server captures one every few minutes when there&rsquo;s activity;
+            click Snapshot to make one now.
           </div>
         )}
         {snapshots.map((s) => (
-          <div
-            key={s.id}
-            style={{
-              padding: 8,
-              borderBottom: '1px solid #eee',
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-            }}
-          >
+          <div key={s.id} className="sl-pages-history-row">
             <div>
-              <div style={{ fontSize: 13 }}>{new Date(s.created_at).toLocaleString()}</div>
-              <div style={{ fontSize: 11, color: '#888' }}>
+              <div className="sl-pages-history-when">
+                {new Date(s.created_at).toLocaleString()}
+              </div>
+              <div className="sl-pages-history-sub">
                 {s.reason} · {s.byte_size.toLocaleString()} B
                 {s.creator_display_name ? ` · ${s.creator_display_name}` : ''}
               </div>
             </div>
             <button
               type="button"
+              className="sl-pages-history-btn"
               onClick={() => {
-                if (window.confirm('Restore this snapshot? Current unsaved edits will be overwritten.')) {
+                if (
+                  window.confirm(
+                    'Restore this snapshot? Current unsaved edits will be overwritten.',
+                  )
+                ) {
                   restoreMutation.mutate(s.id);
                 }
               }}
-              style={btn}
             >
               Restore
             </button>
           </div>
         ))}
       </div>
-    </div>
+    </>
   );
 }
-
-const btn: React.CSSProperties = {
-  padding: '4px 10px',
-  border: '1px solid #ddd',
-  background: '#fff',
-  borderRadius: 4,
-  fontSize: 12,
-  cursor: 'pointer',
-};
