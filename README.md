@@ -30,7 +30,7 @@ Every team of eight pays $200+ / month for Slack, Teams, or Google Chat and gets
 
 ## Status
 
-**M11 of 12 shipped.** Every milestone ends with passing integration tests (`go test -tags=integration`) and a live browser demo. See [docs/kickoff/implementation-roadmap.md](docs/kickoff/implementation-roadmap.md) for the plan.
+**M12 of 12 shipped** — SliilS now has the full feature surface from the original roadmap. Release hardening (Lighthouse a11y gate, manual screen-reader pass, full i18n translation, security review sign-off) is the next phase before v1.0 tag. See [docs/kickoff/implementation-roadmap.md](docs/kickoff/implementation-roadmap.md) for the plan and [docs.sliils.com](https://github.com/newtro/sliils/blob/main/docs/) for user + developer docs.
 
 | # | Milestone | State | Highlights |
 |---|---|---|---|
@@ -46,7 +46,7 @@ Every team of eight pays $200+ / month for Slack, Teams, or Google Chat and gets
 | M9 | Calendar | ✅ | RFC 5545 RRULE, RSVPs, reminders, iCal feed, Google Calendar bidirectional sync |
 | M10 | Pages + Collabora | ✅ | TipTap + Yjs via Y-Sweet, page comments + version history, WOPI for .docx/.xlsx/.pptx |
 | M11 | Push notifications | ✅ | VAPID web push, service worker, DND / quiet hours, mention + DM fanout |
-| M12 | Apps platform + GA | ⏳ | OAuth 2.0, Block-Kit, webhooks, admin dashboard, GDPR export, WCAG 2.1 AA |
+| M12 | Apps platform + admin + GA | ✅ | OAuth 2.0 + PKCE, Block-Kit, bot API, webhooks, slash cmds, admin dashboard, GDPR export, docs site |
 
 ### Screenshots
 
@@ -184,9 +184,38 @@ Integration tests reset the schema on every test, so re-run freely.
 └── Caddyfile          TLS + reverse proxy for single-VM deploy
 ```
 
+## Build an app against SliilS
+
+The apps platform accepts OAuth-installable third-party integrations with Slack-shaped API surface. Existing Slack SDKs work with a base-URL swap.
+
+```bash
+# Developer creates an app
+POST /api/v1/dev/apps  { "slug":"hello-bot", "manifest":{...} }
+# → returns client_id + client_secret (shown once)
+
+# Admin installs into workspace via OAuth + PKCE
+GET /api/v1/oauth/authorize?client_id=...&code_challenge=...
+
+# Developer's backend exchanges the code
+POST /api/v1/oauth/token  (authorization_code + PKCE verifier)
+# → returns slis-xat-... access token
+
+# Bot posts a message
+POST /api/v1/chat.postMessage  { "channel":"1", "text":"hi", "blocks":[...] }
+```
+
+Full walk-through: [docs/apps/quickstart.md](docs/apps/quickstart.md).
+
 ## Documentation
 
-Every non-trivial decision is pre-specified in **[docs/kickoff/](docs/kickoff/)**:
+End-user + developer docs live under [docs/](docs/) and render as a site via `mkdocs serve`:
+
+- [Self-hosting guide](docs/self-hosting/local-dev.md) · [Production deploy](docs/self-hosting/production.md) · [Security checklist](docs/self-hosting/security-checklist.md)
+- [Apps platform overview](docs/apps/overview.md) · [Quickstart](docs/apps/quickstart.md) · [OAuth](docs/apps/oauth.md) · [Bot API](docs/apps/bot-api.md) · [Webhooks](docs/apps/webhooks.md) · [Slash commands](docs/apps/slash-commands.md) · [Block-Kit](docs/apps/block-kit.md)
+- [Admin guide](docs/admin/members.md) — members · retention · export
+- [API reference](docs/reference/api.md) · [WebSocket protocol](docs/reference/ws.md) · [Schema](docs/reference/schema.md)
+
+Implementation-ready specs that shaped every milestone live in **[docs/kickoff/](docs/kickoff/)**:
 
 | Read this to… | File |
 |---|---|

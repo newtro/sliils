@@ -1,5 +1,6 @@
 import type { ReactElement } from 'react';
 import type { Page } from '../api/pages';
+import { t } from '../i18n/messages';
 
 type Props = {
   pages: readonly Page[];
@@ -35,7 +36,7 @@ export function PageSidebar({
             textAlign: 'left',
           }}
         >
-          {isCreating ? 'Creating…' : '+ New page'}
+          {isCreating ? t('page.creating') : t('page.new')}
         </button>
       </div>
       <ul style={{ listStyle: 'none', margin: 0, padding: 0, flex: 1, overflowY: 'auto' }}>
@@ -70,9 +71,11 @@ export function PageSidebar({
               <button
                 type="button"
                 onClick={() => {
-                  if (window.confirm(`Archive "${p.title || 'Untitled'}"?`)) onArchive(p.id);
+                  const title = p.title || t('page.untitled');
+                  if (window.confirm(t('page.archive.confirm', { title }))) onArchive(p.id);
                 }}
-                title="Archive"
+                aria-label={`${t('page.archive')} ${p.title || t('page.untitled')}`}
+                title={t('page.archive')}
                 style={{
                   padding: '0 10px',
                   background: 'transparent',
@@ -81,7 +84,7 @@ export function PageSidebar({
                   cursor: 'pointer',
                 }}
               >
-                ×
+                <span aria-hidden="true">×</span>
               </button>
             </li>
           );

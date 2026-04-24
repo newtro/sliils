@@ -48,6 +48,7 @@ export function CollaboraOverlay({ fileID, filename, onClose }: Props): ReactEle
   return (
     <div
       role="dialog"
+      aria-modal="true"
       aria-label={`Editing ${filename}`}
       style={{
         position: 'fixed',
