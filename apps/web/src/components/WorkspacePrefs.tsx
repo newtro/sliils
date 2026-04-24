@@ -101,9 +101,10 @@ export function WorkspacePrefs({
             className="sl-prefs-emoji"
             maxLength={8}
             value={emoji}
-            placeholder="🙂"
+            placeholder=":)"
             onChange={(e) => setEmoji(e.target.value)}
             aria-label="Status emoji"
+            title="Paste or type an emoji"
           />
           <input
             type="text"
