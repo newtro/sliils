@@ -235,6 +235,8 @@ func (s *Server) routes() {
 	s.mountExternalCalendars(api)
 	s.mountPages(api)
 	s.mountWOPI(api)
+	s.mountDevApps(api)
+	s.mountOAuthApps(api)
 }
 
 func (s *Server) splashPage(c echo.Context) error {

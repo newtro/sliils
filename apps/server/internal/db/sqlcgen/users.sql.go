@@ -14,7 +14,7 @@ import (
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, display_name)
 VALUES ($1, $2, $3)
-RETURNING id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz
+RETURNING id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id
 `
 
 type CreateUserParams struct {
@@ -43,12 +43,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.QuietHoursStart,
 		&i.QuietHoursEnd,
 		&i.QuietHoursTz,
+		&i.IsBot,
+		&i.BotAppInstallationID,
 	)
 	return i, err
 }
 
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz FROM users
+SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id FROM users
 WHERE email = $1 AND deactivated_at IS NULL
 `
 
@@ -72,12 +74,14 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.QuietHoursStart,
 		&i.QuietHoursEnd,
 		&i.QuietHoursTz,
+		&i.IsBot,
+		&i.BotAppInstallationID,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz FROM users
+SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id FROM users
 WHERE id = $1 AND deactivated_at IS NULL
 `
 
@@ -101,6 +105,8 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.QuietHoursStart,
 		&i.QuietHoursEnd,
 		&i.QuietHoursTz,
+		&i.IsBot,
+		&i.BotAppInstallationID,
 	)
 	return i, err
 }

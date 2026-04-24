@@ -24,6 +24,9 @@ type Querier interface {
 	// idx_search_outbox_errors index for manual inspection.
 	ClaimSearchOutboxBatch(ctx context.Context, arg ClaimSearchOutboxBatchParams) ([]ClaimSearchOutboxBatchRow, error)
 	ConsumeAuthToken(ctx context.Context, id int64) error
+	// Single-use exchange: mark used atomically and return the row in one go.
+	// Returning 0 rows on a used/expired code lets the handler 400 cleanly.
+	ConsumeOAuthCode(ctx context.Context, code string) (AppOauthCode, error)
 	CountMentionsAfter(ctx context.Context, arg CountMentionsAfterParams) (int64, error)
 	// Per-channel unread count. Partitioned messages; the created_at lower
 	// bound is the message floor we care about.
@@ -32,8 +35,19 @@ type Querier interface {
 	CountRecentAuthTokens(ctx context.Context, arg CountRecentAuthTokensParams) (int64, error)
 	CountThreadReplies(ctx context.Context, threadRootID *int64) (int64, error)
 	CountWorkspacesForUser(ctx context.Context, userID int64) (int64, error)
+	// Apps platform (M12).
+	// ---- apps (install-global) ---------------------------------------------
+	CreateApp(ctx context.Context, arg CreateAppParams) (App, error)
+	// ---- installations -----------------------------------------------------
+	CreateAppInstallation(ctx context.Context, arg CreateAppInstallationParams) (AppInstallation, error)
+	// ---- app tokens --------------------------------------------------------
+	CreateAppToken(ctx context.Context, arg CreateAppTokenParams) (AppToken, error)
 	CreateAttachment(ctx context.Context, arg CreateAttachmentParams) (MessageAttachment, error)
 	CreateAuthToken(ctx context.Context, arg CreateAuthTokenParams) (AuthToken, error)
+	// ---- bot users ---------------------------------------------------------
+	// Bot users live in the users table with is_bot=true. Email is a
+	// synthetic fake@bot.local sentinel so the UNIQUE constraint stays happy.
+	CreateBotUser(ctx context.Context, arg CreateBotUserParams) (User, error)
 	CreateChannel(ctx context.Context, arg CreateChannelParams) (Channel, error)
 	CreateChannelMembership(ctx context.Context, arg CreateChannelMembershipParams) (ChannelMembership, error)
 	// Helper for the find-or-create tx: creates the underlying channel row
@@ -50,6 +64,8 @@ type Querier interface {
 	CreateMembership(ctx context.Context, arg CreateMembershipParams) (WorkspaceMembership, error)
 	CreateMention(ctx context.Context, arg CreateMentionParams) error
 	CreateMessage(ctx context.Context, arg CreateMessageParams) (Message, error)
+	// ---- oauth codes -------------------------------------------------------
+	CreateOAuthCode(ctx context.Context, arg CreateOAuthCodeParams) error
 	// Native Pages (M10).
 	// ---- pages --------------------------------------------------------------
 	CreatePage(ctx context.Context, arg CreatePageParams) (Page, error)
@@ -107,7 +123,14 @@ type Querier interface {
 	// "Is there a call in progress on this channel?" Returns at most one row;
 	// the partial index backs the lookup.
 	GetActiveMeetingForChannel(ctx context.Context, channelID int64) (Meeting, error)
+	GetAppByClientID(ctx context.Context, clientID string) (App, error)
+	GetAppByID(ctx context.Context, id int64) (App, error)
+	GetAppBySlug(ctx context.Context, slug string) (App, error)
+	// Called during inbound bot API requests. Caller verifies the provided
+	// secret matches the stored hash before trusting the row.
+	GetAppTokenByID(ctx context.Context, tokenID int64) (AppToken, error)
 	GetAuthTokenByHash(ctx context.Context, arg GetAuthTokenByHashParams) (AuthToken, error)
+	GetBotUserByInstallation(ctx context.Context, botAppInstallationID *int64) (User, error)
 	GetChannelByID(ctx context.Context, id int64) (Channel, error)
 	GetChannelByName(ctx context.Context, arg GetChannelByNameParams) (Channel, error)
 	GetChannelMembership(ctx context.Context, arg GetChannelMembershipParams) (ChannelMembership, error)
@@ -123,6 +146,8 @@ type Querier interface {
 	// De-dupe lookup: if the same file content is uploaded twice to the same
 	// workspace, point at the first record instead of creating a duplicate.
 	GetFileBySHA256(ctx context.Context, arg GetFileBySHA256Params) (File, error)
+	GetInstallation(ctx context.Context, arg GetInstallationParams) (AppInstallation, error)
+	GetInstallationByID(ctx context.Context, id int64) (AppInstallation, error)
 	// Token lookup. Runs on the OWNER pool (RLS bypassed) so the accept path
 	// can find the invite without knowing the workspace id. The handler
 	// validates expiry + revoked + accepted + email-match server-side before
@@ -167,6 +192,7 @@ type Querier interface {
 	// Used by the pull worker. Returns every active connection across every
 	// user — owner pool only.
 	ListActiveExternalCalendars(ctx context.Context) ([]ExternalCalendar, error)
+	ListAppsForOwner(ctx context.Context, ownerUserID int64) ([]App, error)
 	// Hydrates attachments for a batch of messages in a single query. Joined
 	// against files so the client gets everything it needs to render a preview.
 	ListAttachmentsForMessages(ctx context.Context, dollar_1 []int64) ([]ListAttachmentsForMessagesRow, error)
@@ -201,6 +227,7 @@ type Querier interface {
 	// valid May instances.
 	ListEventsInRange(ctx context.Context, arg ListEventsInRangeParams) ([]ListEventsInRangeRow, error)
 	ListExternalCalendarsForUser(ctx context.Context, userID int64) ([]ExternalCalendar, error)
+	ListInstallationsForWorkspace(ctx context.Context, workspaceID int64) ([]ListInstallationsForWorkspaceRow, error)
 	// ---- bootstrap / full reindex --------------------------------------------
 	// Streaming-style pagination for the initial / full reindex path. Returns
 	// message ids newer than the cursor, capped at `limit`, so the caller can
@@ -227,6 +254,7 @@ type Querier interface {
 	ListReactionsForMessages(ctx context.Context, dollar_1 []int64) ([]ListReactionsForMessagesRow, error)
 	// Every reply under a thread root, oldest first. Root is NOT included.
 	ListThreadReplies(ctx context.Context, arg ListThreadRepliesParams) ([]Message, error)
+	ListTokensForInstallation(ctx context.Context, appInstallationID int64) ([]ListTokensForInstallationRow, error)
 	// Drives the River reminder job. Returns events starting in the
 	// (now + lead_min, now + lead_max) window for users who RSVPd yes.
 	// The job emits one `event.upcoming` realtime event per (event, user)
@@ -259,6 +287,7 @@ type Querier interface {
 	// Idempotent — reapplying is safe because processed_at stays set.
 	MarkSearchOutboxProcessed(ctx context.Context, ids []int64) error
 	MessageHasAttachments(ctx context.Context, messageID int64) (bool, error)
+	PruneExpiredOAuthCodes(ctx context.Context) error
 	// Retention: keep at most $2 snapshots per page (newest first).
 	PruneOldSnapshots(ctx context.Context, arg PruneOldSnapshotsParams) error
 	// Housekeeping: drop processed rows older than the retention window. Run
@@ -274,21 +303,28 @@ type Querier interface {
 	RemoveReaction(ctx context.Context, arg RemoveReactionParams) error
 	ResetFailedLogins(ctx context.Context, id int64) error
 	RevokeAllUserSessions(ctx context.Context, userID int64) error
+	RevokeAppToken(ctx context.Context, tokenID int64) error
+	RevokeInstallation(ctx context.Context, arg RevokeInstallationParams) error
 	// Admin path. RLS gate on workspace + role applies.
 	RevokeInvite(ctx context.Context, arg RevokeInviteParams) error
 	RevokeSession(ctx context.Context, id int64) error
+	RotateAppSecret(ctx context.Context, arg RotateAppSecretParams) error
 	RotateSessionRefresh(ctx context.Context, arg RotateSessionRefreshParams) error
 	// Stamp the external id + etag after a successful push or on import.
 	SetEventExternalRef(ctx context.Context, arg SetEventExternalRefParams) error
+	SetInstallationBot(ctx context.Context, arg SetInstallationBotParams) error
 	// Stamp the canonical LiveKit room name after we know the meeting id.
 	// Room names are derived from the id, so we assign sequentially.
 	SetMeetingLiveKitRoom(ctx context.Context, arg SetMeetingLiveKitRoomParams) error
+	SoftDeleteApp(ctx context.Context, id int64) error
 	SoftDeleteFile(ctx context.Context, id int64) error
 	SoftDeleteMessage(ctx context.Context, arg SoftDeleteMessageParams) (Message, error)
+	TouchAppToken(ctx context.Context, tokenID int64) error
 	TouchDevice(ctx context.Context, id int64) error
 	TouchPage(ctx context.Context, id int64) error
 	TouchSession(ctx context.Context, id int64) error
 	UnarchivePage(ctx context.Context, id int64) error
+	UpdateAppManifest(ctx context.Context, arg UpdateAppManifestParams) (App, error)
 	// Internal users update their own row. The handler enforces ownership;
 	// the query itself is keyed on (event, user) so crafting a request for
 	// someone else's row requires writing past the handler's checks.

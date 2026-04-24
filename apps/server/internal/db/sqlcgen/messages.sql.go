@@ -50,7 +50,7 @@ func (q *Queries) CountThreadReplies(ctx context.Context, threadRootID *int64) (
 const createMessage = `-- name: CreateMessage :one
 INSERT INTO messages (workspace_id, channel_id, author_user_id, body_md, body_blocks, thread_root_id, parent_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
-RETURNING id, workspace_id, channel_id, thread_root_id, parent_id, author_user_id, author_bot_id, body_md, body_blocks, edited_at, deleted_at, created_at
+RETURNING id, workspace_id, channel_id, thread_root_id, parent_id, author_user_id, author_bot_id, body_md, body_blocks, edited_at, deleted_at, created_at, author_bot_installation_id
 `
 
 type CreateMessageParams struct {
@@ -87,12 +87,13 @@ func (q *Queries) CreateMessage(ctx context.Context, arg CreateMessageParams) (M
 		&i.EditedAt,
 		&i.DeletedAt,
 		&i.CreatedAt,
+		&i.AuthorBotInstallationID,
 	)
 	return i, err
 }
 
 const getMessageByID = `-- name: GetMessageByID :one
-SELECT id, workspace_id, channel_id, thread_root_id, parent_id, author_user_id, author_bot_id, body_md, body_blocks, edited_at, deleted_at, created_at FROM messages
+SELECT id, workspace_id, channel_id, thread_root_id, parent_id, author_user_id, author_bot_id, body_md, body_blocks, edited_at, deleted_at, created_at, author_bot_installation_id FROM messages
 WHERE id = $1
   AND created_at >= $2
   AND deleted_at IS NULL
@@ -121,12 +122,13 @@ func (q *Queries) GetMessageByID(ctx context.Context, arg GetMessageByIDParams) 
 		&i.EditedAt,
 		&i.DeletedAt,
 		&i.CreatedAt,
+		&i.AuthorBotInstallationID,
 	)
 	return i, err
 }
 
 const listChannelMessages = `-- name: ListChannelMessages :many
-SELECT m.id, m.workspace_id, m.channel_id, m.thread_root_id, m.parent_id, m.author_user_id, m.author_bot_id, m.body_md, m.body_blocks, m.edited_at, m.deleted_at, m.created_at,
+SELECT m.id, m.workspace_id, m.channel_id, m.thread_root_id, m.parent_id, m.author_user_id, m.author_bot_id, m.body_md, m.body_blocks, m.edited_at, m.deleted_at, m.created_at, m.author_bot_installation_id,
        COALESCE(
          (SELECT count(*)::bigint
           FROM messages r
@@ -154,19 +156,20 @@ type ListChannelMessagesParams struct {
 }
 
 type ListChannelMessagesRow struct {
-	ID           int64
-	WorkspaceID  int64
-	ChannelID    int64
-	ThreadRootID *int64
-	ParentID     *int64
-	AuthorUserID *int64
-	AuthorBotID  *int64
-	BodyMd       string
-	BodyBlocks   []byte
-	EditedAt     pgtype.Timestamptz
-	DeletedAt    pgtype.Timestamptz
-	CreatedAt    pgtype.Timestamptz
-	ReplyCount   int64
+	ID                      int64
+	WorkspaceID             int64
+	ChannelID               int64
+	ThreadRootID            *int64
+	ParentID                *int64
+	AuthorUserID            *int64
+	AuthorBotID             *int64
+	BodyMd                  string
+	BodyBlocks              []byte
+	EditedAt                pgtype.Timestamptz
+	DeletedAt               pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+	AuthorBotInstallationID *int64
+	ReplyCount              int64
 }
 
 // Reverse-chronological page through top-level channel messages (thread
@@ -200,6 +203,7 @@ func (q *Queries) ListChannelMessages(ctx context.Context, arg ListChannelMessag
 			&i.EditedAt,
 			&i.DeletedAt,
 			&i.CreatedAt,
+			&i.AuthorBotInstallationID,
 			&i.ReplyCount,
 		); err != nil {
 			return nil, err
@@ -250,7 +254,7 @@ func (q *Queries) ListReactionsForMessages(ctx context.Context, dollar_1 []int64
 }
 
 const listThreadReplies = `-- name: ListThreadReplies :many
-SELECT id, workspace_id, channel_id, thread_root_id, parent_id, author_user_id, author_bot_id, body_md, body_blocks, edited_at, deleted_at, created_at FROM messages
+SELECT id, workspace_id, channel_id, thread_root_id, parent_id, author_user_id, author_bot_id, body_md, body_blocks, edited_at, deleted_at, created_at, author_bot_installation_id FROM messages
 WHERE thread_root_id = $1
   AND deleted_at IS NULL
   AND created_at >= $2
@@ -285,6 +289,7 @@ func (q *Queries) ListThreadReplies(ctx context.Context, arg ListThreadRepliesPa
 			&i.EditedAt,
 			&i.DeletedAt,
 			&i.CreatedAt,
+			&i.AuthorBotInstallationID,
 		); err != nil {
 			return nil, err
 		}
@@ -360,7 +365,7 @@ SET deleted_at = now()
 WHERE id = $1
   AND created_at >= $2
   AND deleted_at IS NULL
-RETURNING id, workspace_id, channel_id, thread_root_id, parent_id, author_user_id, author_bot_id, body_md, body_blocks, edited_at, deleted_at, created_at
+RETURNING id, workspace_id, channel_id, thread_root_id, parent_id, author_user_id, author_bot_id, body_md, body_blocks, edited_at, deleted_at, created_at, author_bot_installation_id
 `
 
 type SoftDeleteMessageParams struct {
@@ -384,6 +389,7 @@ func (q *Queries) SoftDeleteMessage(ctx context.Context, arg SoftDeleteMessagePa
 		&i.EditedAt,
 		&i.DeletedAt,
 		&i.CreatedAt,
+		&i.AuthorBotInstallationID,
 	)
 	return i, err
 }
@@ -395,7 +401,7 @@ SET body_md    = $3,
     edited_at   = now()
 WHERE id = $1
   AND created_at >= $2
-RETURNING id, workspace_id, channel_id, thread_root_id, parent_id, author_user_id, author_bot_id, body_md, body_blocks, edited_at, deleted_at, created_at
+RETURNING id, workspace_id, channel_id, thread_root_id, parent_id, author_user_id, author_bot_id, body_md, body_blocks, edited_at, deleted_at, created_at, author_bot_installation_id
 `
 
 type UpdateMessageBodyParams struct {
@@ -426,6 +432,7 @@ func (q *Queries) UpdateMessageBody(ctx context.Context, arg UpdateMessageBodyPa
 		&i.EditedAt,
 		&i.DeletedAt,
 		&i.CreatedAt,
+		&i.AuthorBotInstallationID,
 	)
 	return i, err
 }

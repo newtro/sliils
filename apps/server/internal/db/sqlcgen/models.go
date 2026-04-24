@@ -10,6 +10,58 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+type App struct {
+	ID               int64
+	Slug             string
+	Name             string
+	Description      string
+	OwnerUserID      int64
+	AvatarFileID     *int64
+	Manifest         []byte
+	ClientID         string
+	ClientSecretHash string
+	IsPublic         bool
+	CreatedAt        pgtype.Timestamptz
+	DeletedAt        pgtype.Timestamptz
+}
+
+type AppInstallation struct {
+	ID          int64
+	AppID       int64
+	WorkspaceID int64
+	InstalledBy *int64
+	Scopes      []byte
+	BotUserID   *int64
+	CreatedAt   pgtype.Timestamptz
+	RevokedAt   pgtype.Timestamptz
+}
+
+type AppOauthCode struct {
+	Code                string
+	AppID               int64
+	WorkspaceID         int64
+	UserID              int64
+	RedirectUri         string
+	Scopes              []byte
+	CodeChallenge       string
+	CodeChallengeMethod string
+	ExpiresAt           pgtype.Timestamptz
+	UsedAt              pgtype.Timestamptz
+	CreatedAt           pgtype.Timestamptz
+}
+
+type AppToken struct {
+	TokenID           int64
+	AppInstallationID int64
+	WorkspaceID       int64
+	TokenHash         string
+	Label             string
+	Scopes            []byte
+	CreatedAt         pgtype.Timestamptz
+	LastUsedAt        pgtype.Timestamptz
+	RevokedAt         pgtype.Timestamptz
+}
+
 type AuditLog struct {
 	ID          int64
 	WorkspaceID *int64
@@ -157,18 +209,19 @@ type Mention struct {
 }
 
 type Message struct {
-	ID           int64
-	WorkspaceID  int64
-	ChannelID    int64
-	ThreadRootID *int64
-	ParentID     *int64
-	AuthorUserID *int64
-	AuthorBotID  *int64
-	BodyMd       string
-	BodyBlocks   []byte
-	EditedAt     pgtype.Timestamptz
-	DeletedAt    pgtype.Timestamptz
-	CreatedAt    pgtype.Timestamptz
+	ID                      int64
+	WorkspaceID             int64
+	ChannelID               int64
+	ThreadRootID            *int64
+	ParentID                *int64
+	AuthorUserID            *int64
+	AuthorBotID             *int64
+	BodyMd                  string
+	BodyBlocks              []byte
+	EditedAt                pgtype.Timestamptz
+	DeletedAt               pgtype.Timestamptz
+	CreatedAt               pgtype.Timestamptz
+	AuthorBotInstallationID *int64
 }
 
 type MessageAttachment struct {
@@ -263,22 +316,24 @@ type Session struct {
 }
 
 type User struct {
-	ID               int64
-	Email            string
-	PasswordHash     *string
-	DisplayName      string
-	AvatarFileID     *int64
-	EmailVerifiedAt  pgtype.Timestamptz
-	TotpSecret       *string
-	LockedUntil      pgtype.Timestamptz
-	FailedLoginCount int32
-	CreatedAt        pgtype.Timestamptz
-	UpdatedAt        pgtype.Timestamptz
-	DeactivatedAt    pgtype.Timestamptz
-	DndEnabledUntil  pgtype.Timestamptz
-	QuietHoursStart  *int32
-	QuietHoursEnd    *int32
-	QuietHoursTz     *string
+	ID                   int64
+	Email                string
+	PasswordHash         *string
+	DisplayName          string
+	AvatarFileID         *int64
+	EmailVerifiedAt      pgtype.Timestamptz
+	TotpSecret           *string
+	LockedUntil          pgtype.Timestamptz
+	FailedLoginCount     int32
+	CreatedAt            pgtype.Timestamptz
+	UpdatedAt            pgtype.Timestamptz
+	DeactivatedAt        pgtype.Timestamptz
+	DndEnabledUntil      pgtype.Timestamptz
+	QuietHoursStart      *int32
+	QuietHoursEnd        *int32
+	QuietHoursTz         *string
+	IsBot                bool
+	BotAppInstallationID *int64
 }
 
 type UserDevice struct {
