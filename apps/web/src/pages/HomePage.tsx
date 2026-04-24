@@ -4,9 +4,12 @@ import { Navigate } from 'react-router';
 import { useAuth } from '../auth/AuthContext';
 import { listMyWorkspaces } from '../api/workspaces';
 import type { WorkspaceMembership } from '../api/workspaces';
+import { MarketingPage } from './MarketingPage';
 
-// HomePage is a routing switchboard: once we know the user's state, send
-// them to the right place (setup, their only workspace, or an empty state).
+// HomePage is the routing switchboard at "/". For anonymous visitors it
+// renders the marketing page in-place (so "/" is the true front door,
+// not a redirect). Authenticated users get routed onward to setup, their
+// workspace, or wherever the user's state dictates.
 export function HomePage(): ReactElement {
   const { user, loading } = useAuth();
   const [memberships, setMemberships] = useState<WorkspaceMembership[] | null>(null);
@@ -37,7 +40,9 @@ export function HomePage(): ReactElement {
     );
   }
 
-  if (!user) return <Navigate to="/login" replace />;
+  // Anonymous visitors land on marketing. We render it directly rather
+  // than redirecting to /marketing so "/" stays the canonical URL.
+  if (!user) return <MarketingPage />;
   if (user.needs_setup) return <Navigate to="/setup" replace />;
 
   if (memberships === null) {

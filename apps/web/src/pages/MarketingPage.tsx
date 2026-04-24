@@ -4,147 +4,192 @@ import { MarketingMockup } from '../components/MarketingMockup';
 import logo from '../assets/sliils-logo.png';
 import '../styles/marketing.css';
 
-const featureCards = [
+// Distinctive editorial/operator aesthetic: Bricolage Grotesque pushed
+// to its display optical size for headlines, JetBrains Mono for the
+// technical marginalia, warm cream paper palette with sharp ink.
+
+const statusSignals = [
+  'v0.12 · late 2026',
+  'self-hosted by default',
+  'licensed AGPL-3.0',
+  'postgres row-level security on',
+  'no telemetry, no call-home',
+  'built with Go + React',
+  'meant for 2 – 50 people',
+  'designed for operators',
+];
+
+const features = [
   {
-    title: 'Built for real team communication',
-    copy: 'Channels, threads, mentions, search, and file sharing are the core surface area, not an afterthought buried under enterprise bloat.',
+    title: 'Channels, threads, search, files.',
+    copy: 'The daily surface area of team chat, treated as the primary product — not a loss-leader for upsells you never asked for.',
   },
   {
-    title: 'Self-hosted by default',
-    copy: 'Run it on your infrastructure, keep your workspace data close, and choose storage backends that match how your team operates.',
+    title: 'Run it where your data already lives.',
+    copy: 'Go binary, Postgres, object storage of your choosing. Your infra, your boundary, your backups. No call home.',
   },
   {
-    title: 'Designed for smaller teams',
-    copy: 'SliilS is tuned for teams of roughly 2 to 50 people that want fast coordination without seat-based pricing pressure.',
+    title: 'Sized for teams that still know each other.',
+    copy: 'Two to fifty people. Fast to onboard, light on chrome, free from the sprawl that enterprise suites inherit by default.',
   },
   {
-    title: 'Multi-tenant friendly',
-    copy: 'Useful for operators, studios, and agencies who need separate workspaces without spinning up a completely different stack each time.',
+    title: 'Multi-tenant when you need it.',
+    copy: 'Studios, agencies, operators: spin up multiple workspaces inside one install. Per-tenant email, per-tenant boundaries.',
   },
 ];
 
-const operatingPrinciples = [
-  'Email + password, magic-link sign-in, password reset, and email verification flows are already part of the product foundation.',
-  'Attachment handling is pragmatic: uploads are content-addressed, deduplicated per workspace, and prepared for pluggable storage drivers.',
-  'The interface stays focused on conversation flow, with workspace navigation, threads, and search layered into the daily experience.',
+const principles = [
+  'Magic-link and password flows, email verification, and password reset are native — no third-party auth shim to break on a Tuesday.',
+  'Attachments are content-addressed and deduplicated per workspace, ready for pluggable storage drivers when you outgrow local disk.',
+  'The UI stays focused on the conversation: navigation, threads, and search layered into the daily flow rather than hidden in menus.',
 ];
 
 const rolloutSteps = [
   {
-    title: 'Deploy your stack',
-    copy: 'Run the Go server, Postgres, search, and reverse proxy locally or in your preferred environment.',
+    label: 'deploy',
+    title: 'Stand up the stack.',
+    copy: 'One Go binary, a Postgres database, and a reverse proxy. Local in an afternoon; production on the same afternoon if you like.',
   },
   {
-    title: 'Create a workspace',
-    copy: 'Invite the team, finish setup, and get everyone into a shared communication surface quickly.',
+    label: 'invite',
+    title: 'Bring the team in.',
+    copy: 'First-run wizard creates the super-admin, the first workspace, and the email provider. Invite links do the rest.',
   },
   {
-    title: 'Keep the conversation in-house',
-    copy: 'Messages, files, and workspace configuration live in infrastructure you control instead of another seat-metered SaaS silo.',
+    label: 'own',
+    title: 'Keep it in-house.',
+    copy: 'Messages, files, settings, and every audit record live on hardware you chose. Nothing leaves unless you say so.',
   },
 ];
 
 const faqs = [
   {
-    question: 'Who is this for?',
+    question: 'Who is this built for?',
     answer:
-      'Small companies, internal teams, consultancies, and community groups that want a Slack or Teams style workflow without giving up hosting control.',
+      'Small companies, internal teams, consultancies, and community groups who want a Slack or Teams workflow without surrendering hosting control. If you already know why you want to self-host, this is for you.',
   },
   {
     question: 'What makes it different from a generic chat clone?',
     answer:
-      'The product is being built around durable team workflows: workspace setup, authentication, search, attachments, threaded collaboration, and clean self-hosting boundaries.',
+      'The product is shaped around durable team workflows: workspace setup, authentication, search, attachments, and threaded collaboration behave as a coherent whole. Self-hosting is the default path, not a later-gated feature.',
   },
   {
-    question: 'Can I try the actual app?',
+    question: 'Can I try the actual application?',
     answer:
-      'Yes. The marketing site links directly into the existing sign-up and sign-in flows so you can move from overview to product without a separate stack.',
+      'Yes. Sign up from this page and the existing product flows take it from there — no separate demo stack, no placeholder screenshots standing in for software that does not exist.',
+  },
+  {
+    question: 'Does it try to be every workplace app at once?',
+    answer:
+      'No. Messaging, threads, files, and the operator surface are the point. Pages and calendar are there when teams need them; they are not the trojan horse for a suite.',
   },
 ];
 
 export function MarketingPage(): ReactElement {
   return (
     <main className="marketing-page">
-      <section className="marketing-hero">
-        <div className="marketing-hero__backdrop" />
-        <header className="marketing-nav">
-          <Link to="/marketing" className="marketing-brand" aria-label="SliilS marketing home">
-            <img src="/favicon.png" alt="" className="marketing-brand__icon" />
-            <div className="marketing-brand__copy">
-              <img src={logo} alt="SliilS" className="marketing-brand__wordmark" />
-              <span>Self-hosted team collaboration</span>
-            </div>
+      <div className="marketing-status" role="status" aria-label="Install status">
+        <span className="marketing-status__dot" aria-hidden="true" />
+        <div className="marketing-status__track">
+          <div className="marketing-status__rail" aria-hidden="true">
+            {[...statusSignals, ...statusSignals].map((s, i) => (
+              <span key={`${s}-${i}`}>{s}</span>
+            ))}
+          </div>
+        </div>
+      </div>
+
+      <header className="marketing-nav">
+        <Link to="/" className="marketing-brand" aria-label="SliilS">
+          <img src="/favicon.png" alt="" className="marketing-brand__icon" />
+          <div className="marketing-brand__copy">
+            <img src={logo} alt="SliilS" className="marketing-brand__wordmark" />
+            <span>SELF-HOSTED · TEAM CHAT</span>
+          </div>
+        </Link>
+
+        <nav className="marketing-nav__links" aria-label="Marketing sections">
+          <a href="#what">What it is</a>
+          <a href="#how">How to run it</a>
+          <a href="#faq">Questions</a>
+        </nav>
+
+        <div className="marketing-nav__actions">
+          <Link to="/login" className="marketing-button marketing-button--ghost">
+            Open app
           </Link>
+          <Link to="/signup" className="marketing-button marketing-button--primary">
+            Start a workspace
+            <span className="marketing-button__arrow" aria-hidden="true">→</span>
+          </Link>
+        </div>
+      </header>
 
-          <nav className="marketing-nav__links" aria-label="Marketing page sections">
-            <a href="#features">Features</a>
-            <a href="#how-it-works">How it works</a>
-            <a href="#faq">FAQ</a>
-          </nav>
-
-          <div className="marketing-nav__actions">
-            <Link to="/login" className="marketing-button marketing-button--ghost">
-              Open app
-            </Link>
+      <section className="marketing-hero">
+        <span className="marketing-hero__label">Release 0.12 — bringing chat in-house</span>
+        <h1>
+          Team chat you can <em>actually</em> keep on your own hardware.
+        </h1>
+        <p className="marketing-hero__lead">
+          SliilS is a self-hosted alternative to Slack and Teams for small teams that want
+          channels, threads, search, files, and clean workspace boundaries — without a
+          per-seat tax, without telemetry, without waiting for someone else&rsquo;s
+          shard to come back.
+        </p>
+        <div className="marketing-hero__meta">
+          <div className="marketing-hero__cta">
             <Link to="/signup" className="marketing-button marketing-button--primary">
-              Start a workspace
+              Create your workspace
+              <span className="marketing-button__arrow" aria-hidden="true">→</span>
+            </Link>
+            <Link to="/login" className="marketing-button marketing-button--secondary">
+              Sign in
             </Link>
           </div>
-        </header>
-
-        <div className="marketing-hero__content">
-          <div className="marketing-copy">
-            <span className="marketing-eyebrow">Own the stack. Keep the conversation moving.</span>
-            <h1>Team chat for small organizations that want control without the chaos.</h1>
-            <p className="marketing-lead">
-              SliilS is a self-hosted Slack or Teams alternative for teams that need channels,
-              threads, search, attachments, and clean workspace boundaries without paying a
-              per-seat tax forever.
-            </p>
-          </div>
-
-          <div className="marketing-hero__actions">
-            <div className="marketing-cta">
-              <Link to="/signup" className="marketing-button marketing-button--primary">
-                Create your workspace
-              </Link>
-              <Link to="/login" className="marketing-button marketing-button--secondary">
-                Sign in to the app
-              </Link>
-            </div>
-          </div>
-
-          <MarketingMockup />
-
-          <dl className="marketing-stats">
-            <div>
-              <dt>Team size</dt>
-              <dd>2-50 people</dd>
-            </div>
-            <div>
-              <dt>Deployment model</dt>
-              <dd>Self-hosted</dd>
-            </div>
-            <div>
-              <dt>Core focus</dt>
-              <dd>Messaging + files</dd>
-            </div>
-          </dl>
+          <aside className="marketing-hero__aside" aria-label="At-a-glance facts">
+            <span>
+              <strong>2 – 50</strong>
+              Team size range
+            </span>
+            <span>
+              <strong>Go · Postgres</strong>
+              Stack you already know
+            </span>
+            <span>
+              <strong>AGPL-3.0</strong>
+              Source-available licence
+            </span>
+          </aside>
         </div>
       </section>
 
-      <section id="features" className="marketing-section">
+      <div className="marketing-mockup-wrap">
+        <div className="marketing-mockup-caption">
+          <div>
+            <strong>fig. 01 — a working channel</strong>
+            Rendered from the live product. No staged stock imagery.
+          </div>
+          <span>launch-week · 09:24</span>
+        </div>
+        <MarketingMockup />
+      </div>
+
+      <section id="what" className="marketing-section">
+        <span className="marketing-section__tag">§ 01</span>
         <div className="marketing-section__heading">
-          <span className="marketing-kicker">Why teams pick it</span>
-          <h2>Trim the suite, keep the collaboration surface your team actually uses.</h2>
-          <p>
-            The product is shaped around day-to-day coordination instead of bundling every
-            possible office workflow into one heavyweight subscription.
-          </p>
+          <span className="marketing-section__numeral">01</span>
+          <div>
+            <h2>Trim the suite. Keep the collaboration surface your team actually uses.</h2>
+            <p>
+              SliilS is shaped around the day-to-day — the conversation, the handoff, the
+              file you need to find again next Thursday — instead of bundling every
+              possible office workflow into one heavyweight subscription.
+            </p>
+          </div>
         </div>
 
         <div className="marketing-feature-grid">
-          {featureCards.map((feature) => (
+          {features.map((feature) => (
             <article key={feature.title} className="marketing-feature-card">
               <h3>{feature.title}</h3>
               <p>{feature.copy}</p>
@@ -153,36 +198,58 @@ export function MarketingPage(): ReactElement {
         </div>
       </section>
 
+      <aside className="marketing-quote" aria-label="Pull quote">
+        <div className="marketing-quote__inner">
+          <span className="marketing-quote__mark" aria-hidden="true">&ldquo;</span>
+          <div>
+            <blockquote>
+              No per-seat tax. No telemetry shipped to someone else&rsquo;s warehouse.
+              No <em>pager</em> when their shard goes down.
+            </blockquote>
+            <cite>— the operating premise, in one line</cite>
+          </div>
+        </div>
+      </aside>
+
       <section className="marketing-section marketing-section--split">
-        <div className="marketing-panel marketing-panel--highlight">
-          <span className="marketing-kicker">Practical product foundations</span>
+        <span className="marketing-section__tag">§ 02</span>
+        <div className="marketing-panel--highlight">
+          <span className="marketing-kicker">Practical foundations</span>
           <h2>Made for operators who care where data lives and how the system behaves.</h2>
           <p>
-            SliilS is already structured around a Go backend, React web client, shared schemas,
-            search integration, and an attachment pipeline built for predictable storage behavior.
+            A Go backend, React web client, shared schemas, search integration, and an
+            attachment pipeline built for predictable storage behaviour. Everything is
+            accountable, everything is readable, nothing is a black box.
           </p>
         </div>
 
-        <div className="marketing-panel marketing-panel--list">
-          {operatingPrinciples.map((item) => (
+        <div className="marketing-panel--list">
+          {principles.map((item) => (
             <div key={item} className="marketing-check">
-              <span className="marketing-check__bullet" />
+              <span className="marketing-check__bullet" aria-hidden="true" />
               <p>{item}</p>
             </div>
           ))}
         </div>
       </section>
 
-      <section id="how-it-works" className="marketing-section">
+      <section id="how" className="marketing-section">
+        <span className="marketing-section__tag">§ 03</span>
         <div className="marketing-section__heading">
-          <span className="marketing-kicker">How it works</span>
-          <h2>Simple enough for a small team, structured enough for serious internal use.</h2>
+          <span className="marketing-section__numeral">02</span>
+          <div>
+            <h2>Three steps, no sales call.</h2>
+            <p>
+              Small enough for one person to stand up on a Saturday; structured enough to
+              trust with a team&rsquo;s daily communication by Monday morning.
+            </p>
+          </div>
         </div>
 
         <div className="marketing-steps">
-          {rolloutSteps.map((step, index) => (
+          {rolloutSteps.map((step) => (
             <article key={step.title} className="marketing-step">
-              <span className="marketing-step__index">0{index + 1}</span>
+              <span className="marketing-step__index">{step.label}</span>
               <h3>{step.title}</h3>
               <p>{step.copy}</p>
             </article>
@@ -191,9 +258,12 @@ export function MarketingPage(): ReactElement {
       </section>
 
       <section id="faq" className="marketing-section">
+        <span className="marketing-section__tag">§ 04</span>
         <div className="marketing-section__heading">
-          <span className="marketing-kicker">FAQ</span>
-          <h2>Questions teams usually ask before they bring chat back in-house.</h2>
+          <span className="marketing-section__numeral">03</span>
+          <div>
+            <h2>Questions teams usually ask before they bring chat back in-house.</h2>
+          </div>
         </div>
 
         <div className="marketing-faqs">
@@ -206,22 +276,38 @@ export function MarketingPage(): ReactElement {
         </div>
       </section>
 
-      <section className="marketing-section">
+      <section className="marketing-section" style={{ borderTop: 'none', paddingTop: 0 }}>
         <div className="marketing-cta-panel">
           <div>
             <span className="marketing-kicker">Ready when you are</span>
-            <h2>See the product, start a workspace, and keep your collaboration stack yours.</h2>
+            <h2>
+              Bring the conversation <em>home</em>.
+            </h2>
           </div>
           <div className="marketing-cta">
             <Link to="/signup" className="marketing-button marketing-button--primary">
-              Launch sign up
+              Start a workspace
+              <span className="marketing-button__arrow" aria-hidden="true">→</span>
             </Link>
             <Link to="/login" className="marketing-button marketing-button--secondary">
-              Go to sign in
+              Sign in
             </Link>
           </div>
         </div>
       </section>
+
+      <footer className="marketing-footer">
+        <div>
+          <div className="marketing-footer__mark">SliilS</div>
+          <div style={{ marginTop: '0.4rem' }}>Self-hosted team collaboration · keep your own house</div>
+        </div>
+        <div className="marketing-footer__meta">
+          <span>v0.12-alpha</span>
+          <span>AGPL-3.0</span>
+          <span>no telemetry</span>
+          <span>made for small teams</span>
+        </div>
+      </footer>
     </main>
   );
 }
