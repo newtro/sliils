@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/labstack/echo/v4"
 
@@ -89,6 +90,13 @@ func (s *Server) mountAdminIntegrations(api *echo.Group) {
 	inst.GET("/super-admins", s.listSuperAdmins)
 	inst.POST("/super-admins/:uid/promote", s.promoteSuperAdmin)
 	inst.POST("/super-admins/:uid/demote", s.demoteSuperAdmin)
+
+	// Restart flow: the infra PATCH handler flags install_settings with
+	// a restart_required_at timestamp; the UI polls /restart-status to
+	// show a banner, and /restart fires the main-loop shutdown hook so
+	// systemd/docker can bring the process back with the new config.
+	inst.GET("/restart-status", s.getRestartStatus)
+	inst.POST("/restart", s.postRestart)
 }
 
 // ---- install-level -----------------------------------------------------
@@ -441,6 +449,7 @@ func (s *Server) patchInstallInfrastructure(c echo.Context) error {
 		}
 		return s.installSvc.Set(ctx, key, val, encrypted, &actor.ID)
 	}
+	changed := false
 	for _, p := range []struct {
 		key string
 		v   *string
@@ -457,8 +466,21 @@ func (s *Server) patchInstallInfrastructure(c echo.Context) error {
 		{install.KeyLiveKitAPIKey, req.LiveKitAPIKey, false},
 		{install.KeyLiveKitAPISecret, req.LiveKitSecret, true},
 	} {
+		if p.v == nil {
+			continue
+		}
 		if err := set(p.key, p.v, p.enc); err != nil {
 			return problem.BadRequest(err.Error())
+		}
+		changed = true
+	}
+	if changed {
+		// Services that read these (push, livekit, y-sweet, collabora)
+		// are constructed at boot. Flag the install so the UI can
+		// surface a restart banner. Cleared by main.go on startup.
+		if err := s.installSvc.Set(ctx, install.KeyRestartRequiredAt,
+			time.Now().UTC().Format(time.RFC3339), false, &actor.ID); err != nil {
+			s.logger.Error("flag restart required", "error", err.Error())
 		}
 	}
 	s.recordAudit(c, 0, actor.ID, "install.infrastructure_updated", "install", nil, nil)
@@ -591,4 +613,58 @@ func (s *Server) demoteSuperAdmin(c echo.Context) error {
 
 	s.recordAudit(c, 0, actor.ID, "install.super_admin_demoted", "user", &target, nil)
 	return c.NoContent(http.StatusNoContent)
+}
+
+// ---- restart flow ------------------------------------------------------
+
+type restartStatusDTO struct {
+	RestartRequired bool   `json:"restart_required"`
+	Since           string `json:"since,omitempty"`
+	// Supervised indicates whether the in-app restart button is wired
+	// (i.e. main.go set a restart requester). When false, the UI hides
+	// the button and shows a shell-command hint instead — a bare
+	// `./sliils-app` run has no supervisor to bring it back.
+	Supervised bool `json:"supervised"`
+}
+
+func (s *Server) getRestartStatus(c echo.Context) error {
+	if s.installSvc == nil {
+		return problem.ServiceUnavailable("install settings service is not wired")
+	}
+	since, _ := s.installSvc.Get(c.Request().Context(), install.KeyRestartRequiredAt)
+	return c.JSON(http.StatusOK, restartStatusDTO{
+		RestartRequired: since != "",
+		Since:           since,
+		Supervised:      s.requestRestart != nil,
+	})
+}
+
+func (s *Server) postRestart(c echo.Context) error {
+	if s.requestRestart == nil {
+		// No supervisor hooked up — refuse rather than kill the process
+		// with no way to come back. The UI surfaces this as a
+		// "restart via your init system" message.
+		return problem.ServiceUnavailable(
+			"restart-on-demand is not available; this install runs without a process supervisor — restart via systemd / docker compose",
+		)
+	}
+	actor := userFromContext(c)
+	s.recordAudit(c, 0, actor.ID, "install.server_restart", "install", nil, nil)
+	s.logger.Warn("super-admin requested server restart",
+		"actor_id", actor.ID,
+		"actor_email", actor.Email,
+	)
+	// Fire the request asynchronously so the HTTP response can flush
+	// before the signal loop tears the server down. A small delay lets
+	// the JSON round-trip; by the time the timer expires main.go is
+	// already on the shutdown path and returning 202 is the best we can
+	// offer (the next request will race the shutdown).
+	go func() {
+		time.Sleep(250 * time.Millisecond)
+		s.requestRestart()
+	}()
+	return c.JSON(http.StatusAccepted, map[string]any{
+		"status":  "restarting",
+		"message": "the server is shutting down; your process supervisor will bring it back in a moment",
+	})
 }

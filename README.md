@@ -218,6 +218,28 @@ POST /api/v1/chat.postMessage  { "channel":"1", "text":"hi", "blocks":[...] }
 
 Full walk-through: [docs/apps/quickstart.md](docs/apps/quickstart.md).
 
+## Operations
+
+Run the binary under a supervisor so it can self-restart when a super-admin changes install-level infrastructure (VAPID keys, Collabora URL, Y-Sweet token, LiveKit credentials). The Admin → Integrations tab surfaces a "Restart server" button that exits the process cleanly — the supervisor brings it back with the updated settings. A bare `./sliils-app` run has no supervisor, so the button hides and the UI shows a shell-command hint instead.
+
+```ini
+# systemd unit example
+[Service]
+ExecStart=/usr/local/bin/sliils-app
+Restart=on-success
+RestartSec=1s
+```
+
+```yaml
+# docker compose snippet
+services:
+  sliils-app:
+    image: sliils/app:latest
+    restart: unless-stopped
+```
+
+Email + signup-mode changes apply immediately; only the four infrastructure cards require a restart.
+
 ## Documentation
 
 End-user + developer docs live under [docs/](docs/) and render as a site via `mkdocs serve`:

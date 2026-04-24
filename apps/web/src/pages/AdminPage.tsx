@@ -14,11 +14,13 @@ import {
   generateVAPIDKeys,
   getInstallEmail,
   getInstallInfrastructure,
+  getRestartStatus,
   getSignupMode,
   getWorkspaceEmail,
   patchInstallEmail,
   patchInstallInfrastructure,
   patchWorkspaceEmail,
+  restartServer,
   setSignupMode,
   testWorkspaceEmail,
 } from '../api/install';
@@ -456,11 +458,170 @@ function AuditTab({ slug }: { slug: string }): ReactElement {
 
 // ---- Integrations tab ---------------------------------------------------
 
+// RestartBanner is a super-admin-only CTA that appears when
+// install_settings.restart_required_at is set — i.e. when the admin
+// patched VAPID / Collabora / Y-Sweet / LiveKit since the server last
+// booted. A confirm-first button fires /install/restart and polls
+// /healthz until the server is back, then reloads the page.
+function RestartBanner(): ReactElement | null {
+  const qc = useQueryClient();
+  const statusQuery = useQuery({
+    queryKey: ['install', 'restart-status'],
+    queryFn: () => getRestartStatus(),
+    // Poll while the banner is visible so it picks up saves from
+    // other admins. Short interval is fine — the endpoint is tiny.
+    refetchInterval: 8_000,
+    refetchOnWindowFocus: true,
+  });
+  const [confirming, setConfirming] = useState(false);
+  const [phase, setPhase] = useState<'idle' | 'requesting' | 'waiting' | 'done' | 'error'>('idle');
+  const [errMsg, setErrMsg] = useState<string | null>(null);
+
+  const status = statusQuery.data;
+  if (!status || !status.restart_required) return null;
+
+  async function waitForReadiness(): Promise<void> {
+    // Poll /api/v1/ping until it comes back, then reload. Hard cap at
+    // 30s — if the process doesn't come back on its own by then, the
+    // supervisor is likely misconfigured and the admin needs to look
+    // at logs rather than waiting forever.
+    const deadline = Date.now() + 30_000;
+    while (Date.now() < deadline) {
+      try {
+        const res = await fetch('/api/v1/ping', { cache: 'no-store' });
+        if (res.ok) {
+          setPhase('done');
+          // Invalidate the status query before reload so the next
+          // view doesn't flash a stale banner.
+          qc.invalidateQueries({ queryKey: ['install', 'restart-status'] });
+          setTimeout(() => window.location.reload(), 600);
+          return;
+        }
+      } catch {
+        // network error expected during the restart window
+      }
+      await new Promise((r) => setTimeout(r, 1000));
+    }
+    setPhase('error');
+    setErrMsg('Server did not come back within 30s. Check your supervisor logs (systemctl status sliils-app or docker compose logs).');
+  }
+
+  async function onRestart(): Promise<void> {
+    setPhase('requesting');
+    setErrMsg(null);
+    try {
+      await restartServer();
+      setPhase('waiting');
+      await waitForReadiness();
+    } catch (err) {
+      const msg = err instanceof ApiError ? (err.problem.detail ?? err.message) : (err as Error).message;
+      setPhase('error');
+      setErrMsg(msg);
+    }
+  }
+
+  const sinceText = status.since
+    ? new Date(status.since).toLocaleString()
+    : 'recently';
+
+  return (
+    <div
+      className="sl-admin-card"
+      style={{
+        padding: 20,
+        marginBottom: 16,
+        borderColor: 'var(--warning, #b45309)',
+        background: 'color-mix(in srgb, var(--warning, #b45309) 8%, var(--surface))',
+      }}
+    >
+      <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', flexWrap: 'wrap' }}>
+        <div style={{ flex: '1 1 320px', minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 15, marginBottom: 4 }}>
+            Server restart required
+          </div>
+          <div className="sl-muted" style={{ fontSize: 13, lineHeight: 1.5 }}>
+            Infrastructure settings changed {sinceText}. Push, calls, pages,
+            and office editing still use the previously-loaded values until
+            the server restarts.
+            {!status.supervised && (
+              <>
+                {' '}This install isn&rsquo;t running under a supervisor, so
+                the in-app restart isn&rsquo;t available. Run{' '}
+                <code>systemctl restart sliils-app</code> or{' '}
+                <code>docker compose restart sliils-app</code> from the host
+                to apply.
+              </>
+            )}
+          </div>
+          {phase === 'waiting' && (
+            <div className="sl-muted" style={{ fontSize: 12, marginTop: 8 }}>
+              Waiting for the supervisor to bring the server back…
+            </div>
+          )}
+          {phase === 'done' && (
+            <div className="sl-success" style={{ fontSize: 12, marginTop: 8 }}>
+              Server is back. Reloading.
+            </div>
+          )}
+          {phase === 'error' && errMsg && (
+            <div className="sl-error" style={{ fontSize: 12, marginTop: 8 }}>
+              {errMsg}
+            </div>
+          )}
+        </div>
+        {status.supervised && (
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {!confirming && phase === 'idle' && (
+              <button
+                type="button"
+                className="sl-primary"
+                onClick={() => setConfirming(true)}
+              >
+                Restart server
+              </button>
+            )}
+            {confirming && phase === 'idle' && (
+              <>
+                <span className="sl-muted" style={{ fontSize: 12 }}>
+                  Users will briefly disconnect. Continue?
+                </span>
+                <button
+                  type="button"
+                  className="sl-primary"
+                  onClick={() => {
+                    setConfirming(false);
+                    void onRestart();
+                  }}
+                >
+                  Confirm restart
+                </button>
+                <button
+                  type="button"
+                  className="sl-notif-btn"
+                  onClick={() => setConfirming(false)}
+                >
+                  Cancel
+                </button>
+              </>
+            )}
+            {(phase === 'requesting' || phase === 'waiting') && (
+              <button type="button" className="sl-primary" disabled>
+                Restarting…
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function IntegrationsTab({ slug }: { slug: string }): ReactElement {
   const { user } = useAuth();
   const isSuper = !!user?.is_super_admin;
   return (
     <section className="sl-admin-section">
+      {isSuper && <RestartBanner />}
       <EmailIntegrationCard slug={slug} />
       <SignupModeCard />
       {isSuper && (
@@ -703,8 +864,8 @@ function InstallEmailCard(): ReactElement {
       </div>
       <p className="sl-muted" style={{ marginTop: 0 }}>
         This is the fallback email provider for install-level messages and the
-        default for workspaces that don&rsquo;t set their own. Changes take
-        effect on the next server restart.
+        default for workspaces that don&rsquo;t set their own. Changes apply
+        immediately &mdash; no restart needed.
       </p>
 
       <div className="sl-admin-form">
@@ -820,8 +981,7 @@ function VAPIDCard(): ReactElement {
       <p className="sl-muted" style={{ marginTop: 0 }}>
         VAPID keys authenticate push messages from this install. Generate a
         fresh keypair on first setup — the private key is encrypted at rest
-        and never returned by the API. Changes take effect on the next
-        server restart.
+        and never returned by the API.
       </p>
 
       <div className="sl-admin-form">
@@ -906,9 +1066,6 @@ function CollaboraCard(): ReactElement {
       <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
         Super-admin only · optional · powers in-browser editing of uploaded docs
       </div>
-      <p className="sl-muted" style={{ marginTop: 0 }}>
-        Changes take effect on the next server restart.
-      </p>
 
       <div className="sl-admin-form">
         <label>
@@ -965,9 +1122,6 @@ function YSweetCard(): ReactElement {
       <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
         Super-admin only · optional · backs the Pages multi-cursor experience
       </div>
-      <p className="sl-muted" style={{ marginTop: 0 }}>
-        Changes take effect on the next server restart.
-      </p>
 
       <div className="sl-admin-form">
         <label>
@@ -1042,9 +1196,6 @@ function LiveKitCard(): ReactElement {
       <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
         Super-admin only · optional · powers voice, video, and screen share
       </div>
-      <p className="sl-muted" style={{ marginTop: 0 }}>
-        Changes take effect on the next server restart.
-      </p>
 
       <div className="sl-admin-form">
         <label>

@@ -16,6 +16,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sync"
 	"syscall"
 	"time"
 
@@ -207,6 +208,17 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 	overlayFromDB(install.KeyLiveKitAPIKey, &cfg.LiveKitAPIKey)
 	overlayFromDB(install.KeyLiveKitAPISecret, &cfg.LiveKitAPISecret)
 
+	// Clear any stale "restart required" flag — we just finished booting,
+	// so by definition the restart has happened. The admin UI reads this
+	// key to decide whether to show the restart banner.
+	if v, _ := installSvc.Get(ctx, install.KeyRestartRequiredAt); v != "" {
+		if err := installSvc.Set(ctx, install.KeyRestartRequiredAt, "", false, nil); err != nil {
+			logger.Warn("clear restart-required flag", slog.String("error", err.Error()))
+		} else {
+			logger.Info("cleared pending restart flag from install_settings")
+		}
+	}
+
 	if cfg.SearchEnabled {
 		sc, err := search.NewClient(search.ClientOptions{
 			URL:         cfg.MeiliURL,
@@ -386,6 +398,17 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 	sigCtx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
 
+	// Wire the in-app restart endpoint. POST /install/restart closes
+	// restartCh, which the select below unblocks on — we then go through
+	// the normal graceful-shutdown path and exit with code 0 so systemd
+	// (Restart=on-success) or docker (restart: unless-stopped) relaunches
+	// the process with the freshly-overlaid install_settings.
+	restartCh := make(chan struct{})
+	var restartOnce sync.Once
+	srv.SetRestartRequester(func() {
+		restartOnce.Do(func() { close(restartCh) })
+	})
+
 	if runner != nil {
 		if err := runner.Start(sigCtx); err != nil {
 			return fmt.Errorf("start river runner: %w", err)
@@ -399,11 +422,15 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 		}
 	}()
 
+	restartRequested := false
 	select {
 	case err := <-errCh:
 		return fmt.Errorf("server exited: %w", err)
 	case <-sigCtx.Done():
 		logger.Info("shutdown signal received")
+	case <-restartCh:
+		logger.Info("restart requested via /install/restart")
+		restartRequested = true
 	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -417,7 +444,11 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		return fmt.Errorf("graceful shutdown: %w", err)
 	}
-	logger.Info("sliils-app stopped cleanly")
+	if restartRequested {
+		logger.Info("sliils-app stopped cleanly after restart request; supervisor should relaunch")
+	} else {
+		logger.Info("sliils-app stopped cleanly")
+	}
 	return nil
 }
 

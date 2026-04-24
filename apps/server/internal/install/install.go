@@ -51,6 +51,13 @@ const (
 	// wizard from re-appearing after the first admin fills it in.
 	KeyInstallSetupCompleted = "install.setup_completed"
 
+	// KeyRestartRequiredAt is an ISO-8601 timestamp set whenever a
+	// patch-to-infrastructure writes a value that in-process services
+	// only pick up at boot (VAPID, Collabora, Y-Sweet, LiveKit).
+	// main.go clears it at startup. The Admin UI reads this to show
+	// a "server restart required" banner with a restart button.
+	KeyRestartRequiredAt = "install.restart_required_at"
+
 	// Infrastructure endpoints. All are optional; when empty, the
 	// server falls back to the environment variable it was started
 	// with. An operator can flip between env and DB without downtime.

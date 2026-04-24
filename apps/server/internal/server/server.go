@@ -66,6 +66,7 @@ type Server struct {
 	installSvc *install.Service // install_settings + workspace_email_settings
 	enqueueCalPush CalendarPushEnqueueFunc // nil when no worker runner is wired
 	enqueuePush    PushEnqueueFunc         // nil when no worker runner is wired
+	requestRestart func()                  // nil in tests; set by main.go
 }
 
 // PushEnqueueFunc hands a single-recipient push job to the worker runner.
@@ -87,6 +88,16 @@ type CalendarPushEnqueueFunc func(ctx context.Context, eventID, userID int64, ac
 // / cancelled. Safe to leave nil in tests; the shim no-ops.
 func (s *Server) SetCalendarPushEnqueue(f CalendarPushEnqueueFunc) {
 	s.enqueueCalPush = f
+}
+
+// SetRestartRequester wires the function that /install/restart invokes
+// to bring the process down so the supervisor (systemd / docker) can
+// start it back up with the latest install_settings-derived config.
+// main.go provides this; it typically closes a channel the signal loop
+// is waiting on. When nil, the endpoint 503s — safer than killing the
+// process with no way to come back.
+func (s *Server) SetRestartRequester(f func()) {
+	s.requestRestart = f
 }
 
 // Options collects optional dependencies. Fields left nil fall back to

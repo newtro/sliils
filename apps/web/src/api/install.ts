@@ -145,3 +145,24 @@ export interface VAPIDKeypair {
 export function generateVAPIDKeys(): Promise<VAPIDKeypair> {
   return apiFetch<VAPIDKeypair>('/install/vapid/generate', { method: 'POST' });
 }
+
+// ---- restart flow (super-admin only) -----------------------------------
+
+export interface RestartStatus {
+  restart_required: boolean;
+  since?: string;
+  // supervised=false means the process is running bare (no systemd /
+  // docker) so POST /install/restart would kill the app with no way
+  // to bring it back. UI hides the button in that case.
+  supervised: boolean;
+}
+
+export function getRestartStatus(): Promise<RestartStatus> {
+  return apiFetch<RestartStatus>('/install/restart-status');
+}
+
+export function restartServer(): Promise<{ status: string; message: string }> {
+  return apiFetch<{ status: string; message: string }>('/install/restart', {
+    method: 'POST',
+  });
+}
