@@ -249,6 +249,7 @@ func (s *Server) routes() {
 	s.mountAdmin(api)
 	s.mountAdminIntegrations(api)
 	s.mountChannels(api)
+	s.mountFirstRun(api)
 }
 
 func (s *Server) splashPage(c echo.Context) error {

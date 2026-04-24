@@ -11,10 +11,23 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countActiveUsers = `-- name: CountActiveUsers :one
+SELECT count(*) FROM users WHERE deactivated_at IS NULL
+`
+
+// Used by the first-run wizard to decide whether bootstrap is allowed.
+// Zero active users = fresh install; any existing user = already set up.
+func (q *Queries) CountActiveUsers(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveUsers)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (email, password_hash, display_name)
 VALUES ($1, $2, $3)
-RETURNING id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id
+RETURNING id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id, is_super_admin
 `
 
 type CreateUserParams struct {
@@ -45,12 +58,22 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.QuietHoursTz,
 		&i.IsBot,
 		&i.BotAppInstallationID,
+		&i.IsSuperAdmin,
 	)
 	return i, err
 }
 
+const demoteFromSuperAdmin = `-- name: DemoteFromSuperAdmin :exec
+UPDATE users SET is_super_admin = false WHERE id = $1
+`
+
+func (q *Queries) DemoteFromSuperAdmin(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, demoteFromSuperAdmin, id)
+	return err
+}
+
 const getUserByEmail = `-- name: GetUserByEmail :one
-SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id FROM users
+SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id, is_super_admin FROM users
 WHERE email = $1 AND deactivated_at IS NULL
 `
 
@@ -76,12 +99,13 @@ func (q *Queries) GetUserByEmail(ctx context.Context, email string) (User, error
 		&i.QuietHoursTz,
 		&i.IsBot,
 		&i.BotAppInstallationID,
+		&i.IsSuperAdmin,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id FROM users
+SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id, is_super_admin FROM users
 WHERE id = $1 AND deactivated_at IS NULL
 `
 
@@ -107,6 +131,7 @@ func (q *Queries) GetUserByID(ctx context.Context, id int64) (User, error) {
 		&i.QuietHoursTz,
 		&i.IsBot,
 		&i.BotAppInstallationID,
+		&i.IsSuperAdmin,
 	)
 	return i, err
 }
@@ -148,6 +173,15 @@ WHERE id = $1
 
 func (q *Queries) MarkEmailVerified(ctx context.Context, id int64) error {
 	_, err := q.db.Exec(ctx, markEmailVerified, id)
+	return err
+}
+
+const promoteToSuperAdmin = `-- name: PromoteToSuperAdmin :exec
+UPDATE users SET is_super_admin = true WHERE id = $1
+`
+
+func (q *Queries) PromoteToSuperAdmin(ctx context.Context, id int64) error {
+	_, err := q.db.Exec(ctx, promoteToSuperAdmin, id)
 	return err
 }
 

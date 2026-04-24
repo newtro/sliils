@@ -63,6 +63,24 @@ func userFromContext(c echo.Context) *sqlcgen.User {
 	return v
 }
 
+// requireSuperAdmin chains after requireAuth and rejects non-super-admins.
+// Used by install-level endpoints (signup mode, infrastructure config,
+// install-wide email defaults). Must ALWAYS be mounted under requireAuth.
+func (s *Server) requireSuperAdmin() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			user := userFromContext(c)
+			if user == nil {
+				return problem.Unauthorized("no user in context")
+			}
+			if !user.IsSuperAdmin {
+				return problem.Forbidden("super-admin access required")
+			}
+			return next(c)
+		}
+	}
+}
+
 func sessionIDFromContext(c echo.Context) int64 {
 	v, _ := c.Request().Context().Value(ctxSessionID).(int64)
 	return v

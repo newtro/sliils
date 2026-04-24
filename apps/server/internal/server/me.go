@@ -20,6 +20,7 @@ type UserDTO struct {
 	EmailVerifiedAt *time.Time `json:"email_verified_at,omitempty"`
 	CreatedAt       time.Time  `json:"created_at"`
 	NeedsSetup      bool       `json:"needs_setup"`
+	IsSuperAdmin    bool       `json:"is_super_admin"`
 }
 
 type updateMeRequest struct {

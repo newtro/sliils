@@ -188,6 +188,25 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 		}
 	}
 
+	// Overlay install_settings infrastructure values on top of env
+	// config so admin edits via Integrations take effect on the next
+	// restart. DB wins when both are set; env is the fallback only.
+	overlayFromDB := func(key string, target *string) {
+		if v, _ := installSvc.Get(ctx, key); v != "" {
+			*target = v
+		}
+	}
+	overlayFromDB(install.KeyVAPIDPublicKey, &cfg.VAPIDPublicKey)
+	overlayFromDB(install.KeyVAPIDPrivateKey, &cfg.VAPIDPrivateKey)
+	overlayFromDB(install.KeyVAPIDSubject, &cfg.VAPIDSubject)
+	overlayFromDB(install.KeyCollaboraURL, &cfg.CollaboraURL)
+	overlayFromDB(install.KeyYSweetURL, &cfg.YSweetURL)
+	overlayFromDB(install.KeyYSweetServerToken, &cfg.YSweetServerToken)
+	overlayFromDB(install.KeyLiveKitURL, &cfg.LiveKitURL)
+	overlayFromDB(install.KeyLiveKitWSURL, &cfg.LiveKitWSURL)
+	overlayFromDB(install.KeyLiveKitAPIKey, &cfg.LiveKitAPIKey)
+	overlayFromDB(install.KeyLiveKitAPISecret, &cfg.LiveKitAPISecret)
+
 	if cfg.SearchEnabled {
 		sc, err := search.NewClient(search.ClientOptions{
 			URL:         cfg.MeiliURL,

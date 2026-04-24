@@ -355,6 +355,7 @@ type User struct {
 	QuietHoursTz         *string
 	IsBot                bool
 	BotAppInstallationID *int64
+	IsSuperAdmin         bool
 }
 
 type UserDevice struct {

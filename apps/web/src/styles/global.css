@@ -3652,3 +3652,134 @@ button {
   color: #c44;
   cursor: help;
 }
+
+/* ---- First-run wizard -------------------------------------------------- */
+
+.sl-firstrun-shell {
+  min-height: 100vh;
+  padding: 48px 20px 80px;
+  background: var(--bg);
+  color: var(--text);
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+.sl-firstrun-container {
+  max-width: 720px;
+  margin: 0 auto;
+}
+.sl-firstrun-header {
+  margin-bottom: 28px;
+  text-align: center;
+}
+.sl-firstrun-title {
+  font-size: 28px;
+  font-weight: 650;
+  margin: 0 0 8px;
+  letter-spacing: -0.01em;
+}
+.sl-firstrun-subtitle {
+  margin: 0;
+  color: var(--text-muted);
+}
+.sl-firstrun-form {
+  display: grid;
+  gap: 20px;
+}
+.sl-firstrun-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  box-shadow: var(--shadow-sm);
+}
+.sl-firstrun-step {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 8px;
+}
+.sl-firstrun-grid {
+  display: grid;
+  gap: 14px;
+  grid-template-columns: 1fr;
+}
+@media (min-width: 600px) {
+  .sl-firstrun-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+.sl-firstrun-grid label {
+  display: block;
+}
+.sl-firstrun-grid label > span {
+  display: block;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+}
+.sl-firstrun-grid input {
+  width: 100%;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 14px;
+  box-sizing: border-box;
+}
+.sl-firstrun-grid input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+.sl-firstrun-inline-toggle {
+  font-size: 14px;
+  color: var(--text);
+  cursor: pointer;
+}
+.sl-firstrun-radio-group {
+  display: grid;
+  gap: 10px;
+  margin-top: 10px;
+}
+.sl-firstrun-radio {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color var(--t-fast) var(--ease),
+    background var(--t-fast) var(--ease);
+}
+.sl-firstrun-radio:hover {
+  background: var(--surface-hover);
+}
+.sl-firstrun-radio.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.sl-firstrun-radio input[type='radio'] {
+  margin-top: 3px;
+}
+.sl-firstrun-radio-title {
+  font-weight: 600;
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+.sl-firstrun-submit {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.sl-firstrun-card .sl-hint {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted);
+}

@@ -14,6 +14,7 @@ import { InvitePage } from '../pages/InvitePage';
 import { CalendarPage } from '../pages/CalendarPage';
 import { PagesPage } from '../pages/PagesPage';
 import { AdminPage } from '../pages/AdminPage';
+import { FirstRunPage } from '../pages/FirstRunPage';
 
 export const routes: RouteObject[] = [
   {
@@ -21,6 +22,7 @@ export const routes: RouteObject[] = [
     Component: RootLayout,
     children: [
       { index: true, Component: HomePage },
+      { path: 'first-run', Component: FirstRunPage },
       { path: 'marketing', Component: MarketingPage },
       { path: 'login', Component: LoginPage },
       { path: 'signup', Component: SignupPage },

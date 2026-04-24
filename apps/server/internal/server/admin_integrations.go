@@ -9,6 +9,7 @@ import (
 	"github.com/sliils/sliils/apps/server/internal/email"
 	"github.com/sliils/sliils/apps/server/internal/install"
 	"github.com/sliils/sliils/apps/server/internal/problem"
+	"github.com/sliils/sliils/apps/server/internal/push"
 )
 
 // Admin Integrations tab (M12-polish).
@@ -61,17 +62,24 @@ func (s *Server) mountAdminIntegrations(api *echo.Group) {
 	g.PATCH("/email", s.patchWorkspaceEmailIntegration)
 	g.POST("/email/test", s.testWorkspaceEmailIntegration)
 
-	// Install-wide endpoints. At v1 any workspace admin can read/edit
-	// them — a self-hosted install is typically one operator with all
-	// admins trusted. A dedicated super-admin role is a v1.1 concern.
-	// Unauthenticated readers get the /install/status endpoint (below)
-	// which reveals only whether the first-run wizard is complete.
+	// /install/status is PUBLIC — the signup page consults it to decide
+	// whether to show the registration form. Reveals only policy flags,
+	// no secrets.
 	api.GET("/install/status", s.getInstallStatus)
 
+	// Everything else under /install is super-admin-only. A workspace
+	// owner on some tenant cannot change install-level policy for
+	// tenants they don't control.
 	inst := api.Group("/install")
 	inst.Use(s.requireAuth())
+	inst.Use(s.requireSuperAdmin())
 	inst.GET("/signup-mode", s.getInstallSignupMode)
 	inst.PATCH("/signup-mode", s.patchInstallSignupMode)
+	inst.GET("/email", s.getInstallEmail)
+	inst.PATCH("/email", s.patchInstallEmail)
+	inst.GET("/infrastructure", s.getInstallInfrastructure)
+	inst.PATCH("/infrastructure", s.patchInstallInfrastructure)
+	inst.POST("/vapid/generate", s.generateVAPIDKeys)
 }
 
 // ---- install-level -----------------------------------------------------
@@ -256,4 +264,210 @@ func firstNonEmptyStr(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// ---- install-level email (auth flows) ---------------------------------
+
+type installEmailDTO struct {
+	Provider    string `json:"provider"`
+	FromAddress string `json:"from_address,omitempty"`
+	FromName    string `json:"from_name,omitempty"`
+	APIKeyIsSet bool   `json:"api_key_is_set"`
+}
+
+type patchInstallEmailRequest struct {
+	Provider     string `json:"provider,omitempty"`
+	ResendAPIKey string `json:"resend_api_key,omitempty"` // empty = keep
+	FromAddress  string `json:"from_address,omitempty"`
+	FromName     string `json:"from_name,omitempty"`
+}
+
+func (s *Server) getInstallEmail(c echo.Context) error {
+	if s.installSvc == nil {
+		return problem.ServiceUnavailable("install settings service is not wired")
+	}
+	ctx := c.Request().Context()
+	provider, _ := s.installSvc.Get(ctx, install.KeyInstallEmailProvider)
+	apiKey, _ := s.installSvc.Get(ctx, install.KeyInstallResendAPIKey)
+	fromAddr, _ := s.installSvc.Get(ctx, install.KeyInstallEmailFrom)
+	fromName, _ := s.installSvc.Get(ctx, install.KeyInstallEmailFromName)
+	return c.JSON(http.StatusOK, installEmailDTO{
+		Provider:    firstNonEmptyStr(provider, "resend"),
+		FromAddress: fromAddr,
+		FromName:    fromName,
+		APIKeyIsSet: apiKey != "",
+	})
+}
+
+func (s *Server) patchInstallEmail(c echo.Context) error {
+	if s.installSvc == nil {
+		return problem.ServiceUnavailable("install settings service is not wired")
+	}
+	actor := userFromContext(c)
+	var req patchInstallEmailRequest
+	if err := c.Bind(&req); err != nil {
+		return problem.BadRequest("invalid body")
+	}
+	provider := strings.TrimSpace(req.Provider)
+	if provider == "" {
+		provider = "resend"
+	}
+	ctx := c.Request().Context()
+	if err := s.installSvc.Set(ctx, install.KeyInstallEmailProvider, provider, false, &actor.ID); err != nil {
+		return problem.Internal(err.Error())
+	}
+	if strings.TrimSpace(req.ResendAPIKey) != "" {
+		if err := s.installSvc.Set(ctx, install.KeyInstallResendAPIKey, strings.TrimSpace(req.ResendAPIKey), true, &actor.ID); err != nil {
+			return problem.BadRequest(err.Error())
+		}
+	}
+	if err := s.installSvc.Set(ctx, install.KeyInstallEmailFrom, strings.TrimSpace(req.FromAddress), false, &actor.ID); err != nil {
+		return problem.Internal(err.Error())
+	}
+	if err := s.installSvc.Set(ctx, install.KeyInstallEmailFromName, strings.TrimSpace(req.FromName), false, &actor.ID); err != nil {
+		return problem.Internal(err.Error())
+	}
+	s.recordAudit(c, 0, actor.ID, "install.email_updated", "install", nil, map[string]any{
+		"from_address": req.FromAddress,
+		"api_key_set":  req.ResendAPIKey != "",
+	})
+	return s.getInstallEmail(c)
+}
+
+// ---- install-level infrastructure -------------------------------------
+
+// infraDTO bundles every infrastructure endpoint the admin can edit.
+// Secret fields (VAPID private key, LiveKit secret, Y-Sweet server
+// token) are never returned — the UI only sees an is_set flag.
+type infraDTO struct {
+	VAPIDPublicKey     string `json:"vapid_public_key,omitempty"`
+	VAPIDPrivateKeySet bool   `json:"vapid_private_key_set"`
+	VAPIDSubject       string `json:"vapid_subject,omitempty"`
+	CollaboraURL       string `json:"collabora_url,omitempty"`
+	YSweetURL          string `json:"ysweet_url,omitempty"`
+	YSweetTokenSet     bool   `json:"ysweet_server_token_set"`
+	LiveKitURL         string `json:"livekit_url,omitempty"`
+	LiveKitWSURL       string `json:"livekit_ws_url,omitempty"`
+	LiveKitAPIKey      string `json:"livekit_api_key,omitempty"`
+	LiveKitSecretSet   bool   `json:"livekit_api_secret_set"`
+}
+
+type patchInfraRequest struct {
+	VAPIDPublicKey  *string `json:"vapid_public_key,omitempty"`
+	VAPIDPrivateKey *string `json:"vapid_private_key,omitempty"` // empty = keep
+	VAPIDSubject    *string `json:"vapid_subject,omitempty"`
+	CollaboraURL    *string `json:"collabora_url,omitempty"`
+	YSweetURL       *string `json:"ysweet_url,omitempty"`
+	YSweetToken     *string `json:"ysweet_server_token,omitempty"` // empty = keep
+	LiveKitURL      *string `json:"livekit_url,omitempty"`
+	LiveKitWSURL    *string `json:"livekit_ws_url,omitempty"`
+	LiveKitAPIKey   *string `json:"livekit_api_key,omitempty"`
+	LiveKitSecret   *string `json:"livekit_api_secret,omitempty"` // empty = keep
+}
+
+func (s *Server) getInstallInfrastructure(c echo.Context) error {
+	if s.installSvc == nil {
+		return problem.ServiceUnavailable("install settings service is not wired")
+	}
+	ctx := c.Request().Context()
+	dto := infraDTO{}
+	dto.VAPIDPublicKey, _ = s.installSvc.Get(ctx, install.KeyVAPIDPublicKey)
+	dto.VAPIDSubject, _ = s.installSvc.Get(ctx, install.KeyVAPIDSubject)
+	priv, _ := s.installSvc.Get(ctx, install.KeyVAPIDPrivateKey)
+	dto.VAPIDPrivateKeySet = priv != ""
+	dto.CollaboraURL, _ = s.installSvc.Get(ctx, install.KeyCollaboraURL)
+	dto.YSweetURL, _ = s.installSvc.Get(ctx, install.KeyYSweetURL)
+	ysweetTok, _ := s.installSvc.Get(ctx, install.KeyYSweetServerToken)
+	dto.YSweetTokenSet = ysweetTok != ""
+	dto.LiveKitURL, _ = s.installSvc.Get(ctx, install.KeyLiveKitURL)
+	dto.LiveKitWSURL, _ = s.installSvc.Get(ctx, install.KeyLiveKitWSURL)
+	dto.LiveKitAPIKey, _ = s.installSvc.Get(ctx, install.KeyLiveKitAPIKey)
+	lkSecret, _ := s.installSvc.Get(ctx, install.KeyLiveKitAPISecret)
+	dto.LiveKitSecretSet = lkSecret != ""
+
+	// Fall back to runtime config values for display when DB is empty
+	// — the admin sees what they'd be replacing.
+	if dto.VAPIDPublicKey == "" {
+		dto.VAPIDPublicKey = s.cfg.VAPIDPublicKey
+	}
+	if dto.VAPIDSubject == "" {
+		dto.VAPIDSubject = s.cfg.VAPIDSubject
+	}
+	if dto.CollaboraURL == "" {
+		dto.CollaboraURL = s.cfg.CollaboraURL
+	}
+	if dto.YSweetURL == "" {
+		dto.YSweetURL = s.cfg.YSweetURL
+	}
+	if dto.LiveKitURL == "" {
+		dto.LiveKitURL = s.cfg.LiveKitURL
+	}
+	if dto.LiveKitWSURL == "" {
+		dto.LiveKitWSURL = s.cfg.LiveKitWSURL
+	}
+	if dto.LiveKitAPIKey == "" {
+		dto.LiveKitAPIKey = s.cfg.LiveKitAPIKey
+	}
+	return c.JSON(http.StatusOK, dto)
+}
+
+func (s *Server) patchInstallInfrastructure(c echo.Context) error {
+	if s.installSvc == nil {
+		return problem.ServiceUnavailable("install settings service is not wired")
+	}
+	actor := userFromContext(c)
+	var req patchInfraRequest
+	if err := c.Bind(&req); err != nil {
+		return problem.BadRequest("invalid body")
+	}
+	ctx := c.Request().Context()
+	set := func(key string, ptr *string, encrypted bool) error {
+		if ptr == nil {
+			return nil
+		}
+		val := strings.TrimSpace(*ptr)
+		if encrypted && val == "" {
+			// Empty encrypted field = preserve existing secret.
+			return nil
+		}
+		return s.installSvc.Set(ctx, key, val, encrypted, &actor.ID)
+	}
+	for _, p := range []struct {
+		key string
+		v   *string
+		enc bool
+	}{
+		{install.KeyVAPIDPublicKey, req.VAPIDPublicKey, false},
+		{install.KeyVAPIDPrivateKey, req.VAPIDPrivateKey, true},
+		{install.KeyVAPIDSubject, req.VAPIDSubject, false},
+		{install.KeyCollaboraURL, req.CollaboraURL, false},
+		{install.KeyYSweetURL, req.YSweetURL, false},
+		{install.KeyYSweetServerToken, req.YSweetToken, true},
+		{install.KeyLiveKitURL, req.LiveKitURL, false},
+		{install.KeyLiveKitWSURL, req.LiveKitWSURL, false},
+		{install.KeyLiveKitAPIKey, req.LiveKitAPIKey, false},
+		{install.KeyLiveKitAPISecret, req.LiveKitSecret, true},
+	} {
+		if err := set(p.key, p.v, p.enc); err != nil {
+			return problem.BadRequest(err.Error())
+		}
+	}
+	s.recordAudit(c, 0, actor.ID, "install.infrastructure_updated", "install", nil, nil)
+	return s.getInstallInfrastructure(c)
+}
+
+// generateVAPIDKeys mints a fresh P-256 VAPID keypair and returns it
+// to the caller — it does NOT auto-save. The admin reviews + saves
+// through the normal PATCH, so they can also copy the key to any
+// dependent clients (Tauri native push in the future, etc.) before
+// committing.
+func (s *Server) generateVAPIDKeys(c echo.Context) error {
+	priv, pub, err := push.GenerateVAPIDKeys()
+	if err != nil {
+		return problem.Internal("generate vapid keypair: " + err.Error())
+	}
+	return c.JSON(http.StatusOK, map[string]string{
+		"public_key":  pub,
+		"private_key": priv,
+	})
 }

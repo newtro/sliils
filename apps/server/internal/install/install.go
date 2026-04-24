@@ -50,6 +50,20 @@ const (
 	// Whether the install has finished its first-run wizard. Blocks the
 	// wizard from re-appearing after the first admin fills it in.
 	KeyInstallSetupCompleted = "install.setup_completed"
+
+	// Infrastructure endpoints. All are optional; when empty, the
+	// server falls back to the environment variable it was started
+	// with. An operator can flip between env and DB without downtime.
+	KeyVAPIDPublicKey    = "vapid.public_key"
+	KeyVAPIDPrivateKey   = "vapid.private_key"
+	KeyVAPIDSubject      = "vapid.subject"
+	KeyCollaboraURL      = "collabora.url"
+	KeyYSweetURL         = "ysweet.url"
+	KeyYSweetServerToken = "ysweet.server_token"
+	KeyLiveKitURL        = "livekit.url"
+	KeyLiveKitWSURL      = "livekit.ws_url"
+	KeyLiveKitAPIKey     = "livekit.api_key"
+	KeyLiveKitAPISecret  = "livekit.api_secret"
 )
 
 // SignupMode values.

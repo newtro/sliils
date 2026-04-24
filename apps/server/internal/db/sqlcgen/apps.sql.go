@@ -173,7 +173,7 @@ const createBotUser = `-- name: CreateBotUser :one
 
 INSERT INTO users (email, password_hash, display_name, is_bot, bot_app_installation_id, email_verified_at)
 VALUES ($1, NULL, $2, true, $3, now())
-RETURNING id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id
+RETURNING id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id, is_super_admin
 `
 
 type CreateBotUserParams struct {
@@ -207,6 +207,7 @@ func (q *Queries) CreateBotUser(ctx context.Context, arg CreateBotUserParams) (U
 		&i.QuietHoursTz,
 		&i.IsBot,
 		&i.BotAppInstallationID,
+		&i.IsSuperAdmin,
 	)
 	return i, err
 }
@@ -344,7 +345,7 @@ func (q *Queries) GetAppTokenByID(ctx context.Context, tokenID int64) (AppToken,
 }
 
 const getBotUserByInstallation = `-- name: GetBotUserByInstallation :one
-SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id FROM users
+SELECT id, email, password_hash, display_name, avatar_file_id, email_verified_at, totp_secret, locked_until, failed_login_count, created_at, updated_at, deactivated_at, dnd_enabled_until, quiet_hours_start, quiet_hours_end, quiet_hours_tz, is_bot, bot_app_installation_id, is_super_admin FROM users
 WHERE bot_app_installation_id = $1 AND is_bot = true AND deactivated_at IS NULL
 `
 
@@ -370,6 +371,7 @@ func (q *Queries) GetBotUserByInstallation(ctx context.Context, botAppInstallati
 		&i.QuietHoursTz,
 		&i.IsBot,
 		&i.BotAppInstallationID,
+		&i.IsSuperAdmin,
 	)
 	return i, err
 }

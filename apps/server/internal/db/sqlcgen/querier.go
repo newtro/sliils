@@ -27,6 +27,9 @@ type Querier interface {
 	// Single-use exchange: mark used atomically and return the row in one go.
 	// Returning 0 rows on a used/expired code lets the handler 400 cleanly.
 	ConsumeOAuthCode(ctx context.Context, code string) (AppOauthCode, error)
+	// Used by the first-run wizard to decide whether bootstrap is allowed.
+	// Zero active users = fresh install; any existing user = already set up.
+	CountActiveUsers(ctx context.Context) (int64, error)
 	CountMentionsAfter(ctx context.Context, arg CountMentionsAfterParams) (int64, error)
 	// Per-channel unread count. Partitioned messages; the created_at lower
 	// bound is the message floor we care about.
@@ -107,6 +110,7 @@ type Querier interface {
 	DeletePageComment(ctx context.Context, id int64) error
 	DeleteSlashCommand(ctx context.Context, id int64) error
 	DeleteWorkspaceEmailSettings(ctx context.Context, workspaceID int64) error
+	DemoteFromSuperAdmin(ctx context.Context, id int64) error
 	// Called by the push worker when the endpoint returns 404/410.
 	DisableDevice(ctx context.Context, arg DisableDeviceParams) error
 	DisconnectExternalCalendar(ctx context.Context, arg DisconnectExternalCalendarParams) error
@@ -320,6 +324,7 @@ type Querier interface {
 	// Idempotent — reapplying is safe because processed_at stays set.
 	MarkSearchOutboxProcessed(ctx context.Context, ids []int64) error
 	MessageHasAttachments(ctx context.Context, messageID int64) (bool, error)
+	PromoteToSuperAdmin(ctx context.Context, id int64) error
 	PruneExpiredOAuthCodes(ctx context.Context) error
 	// Retention: keep at most $2 snapshots per page (newest first).
 	PruneOldSnapshots(ctx context.Context, arg PruneOldSnapshotsParams) error

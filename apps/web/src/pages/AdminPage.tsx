@@ -11,13 +11,24 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import { ApiError, apiFetch } from '../api/client';
 import {
+  generateVAPIDKeys,
+  getInstallEmail,
+  getInstallInfrastructure,
   getSignupMode,
   getWorkspaceEmail,
+  patchInstallEmail,
+  patchInstallInfrastructure,
   patchWorkspaceEmail,
   setSignupMode,
   testWorkspaceEmail,
 } from '../api/install';
-import type { SignupMode, WorkspaceEmailConfig } from '../api/install';
+import type {
+  InstallEmailConfig,
+  InstallInfrastructure,
+  PatchInstallInfrastructure,
+  SignupMode,
+  WorkspaceEmailConfig,
+} from '../api/install';
 import { listMyWorkspaces } from '../api/workspaces';
 import { useAuth } from '../auth/AuthContext';
 import { InviteDialog } from '../components/InviteDialog';
@@ -446,10 +457,21 @@ function AuditTab({ slug }: { slug: string }): ReactElement {
 // ---- Integrations tab ---------------------------------------------------
 
 function IntegrationsTab({ slug }: { slug: string }): ReactElement {
+  const { user } = useAuth();
+  const isSuper = !!user?.is_super_admin;
   return (
     <section className="sl-admin-section">
       <EmailIntegrationCard slug={slug} />
       <SignupModeCard />
+      {isSuper && (
+        <>
+          <InstallEmailCard />
+          <VAPIDCard />
+          <CollaboraCard />
+          <YSweetCard />
+          <LiveKitCard />
+        </>
+      )}
     </section>
   );
 }
@@ -594,7 +616,7 @@ function SignupModeCard(): ReactElement {
   const current = modeQuery.data?.signup_mode ?? 'invite_only';
 
   return (
-    <div className="sl-admin-card" style={{ padding: 24 }}>
+    <div className="sl-admin-card" style={{ padding: 24, marginBottom: 16 }}>
       <h2 className="sl-admin-section-title" style={{ marginBottom: 8 }}>
         Who can sign up
       </h2>
@@ -620,6 +642,457 @@ function SignupModeCard(): ReactElement {
         >
           Open signup
         </button>
+      </div>
+    </div>
+  );
+}
+
+// ---- Install-level cards (super-admin only) ---------------------------
+
+function InstallEmailCard(): ReactElement {
+  const qc = useQueryClient();
+  const cfgQuery = useQuery({
+    queryKey: ['install', 'email'],
+    queryFn: () => getInstallEmail(),
+  });
+  const [apiKey, setApiKey] = useState('');
+  const [fromAddress, setFromAddress] = useState('');
+  const [fromName, setFromName] = useState('');
+  const [status, setStatus] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!cfgQuery.data) return;
+    if (cfgQuery.data.from_address && fromAddress === '') {
+      setFromAddress(cfgQuery.data.from_address);
+    }
+    if (cfgQuery.data.from_name && fromName === '') {
+      setFromName(cfgQuery.data.from_name);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cfgQuery.data]);
+
+  const saveMutation = useMutation({
+    mutationFn: () =>
+      patchInstallEmail({
+        provider: 'resend',
+        resend_api_key: apiKey,
+        from_address: fromAddress,
+        from_name: fromName,
+      }),
+    onSuccess: (cfg: InstallEmailConfig) => {
+      qc.setQueryData(['install', 'email'], cfg);
+      setApiKey('');
+      setStatus({ kind: 'ok', text: 'Saved.' });
+    },
+    onError: (err: Error) => {
+      const msg =
+        err instanceof ApiError ? (err.problem.detail ?? err.message) : err.message;
+      setStatus({ kind: 'err', text: msg });
+    },
+  });
+
+  const cfg = cfgQuery.data;
+
+  return (
+    <div className="sl-admin-card" style={{ padding: 24, marginBottom: 16 }}>
+      <h2 className="sl-admin-section-title" style={{ marginBottom: 4 }}>
+        Install-wide email (auth flows)
+      </h2>
+      <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        Super-admin only · used for magic-link, password-reset, verify-email
+      </div>
+      <p className="sl-muted" style={{ marginTop: 0 }}>
+        This is the fallback email provider for install-level messages and the
+        default for workspaces that don&rsquo;t set their own. Changes take
+        effect on the next server restart.
+      </p>
+
+      <div className="sl-admin-form">
+        <label>
+          <span>Resend API key {cfg?.api_key_is_set ? '(configured — leave blank to keep)' : '(required)'}</span>
+          <input
+            type="password"
+            autoComplete="off"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder={cfg?.api_key_is_set ? '•••••• (unchanged)' : 're_...'}
+          />
+        </label>
+        <label>
+          <span>From address</span>
+          <input
+            type="email"
+            value={fromAddress}
+            onChange={(e) => setFromAddress(e.target.value)}
+            placeholder="no-reply@yourdomain.com"
+          />
+        </label>
+        <label>
+          <span>From name</span>
+          <input
+            type="text"
+            value={fromName}
+            onChange={(e) => setFromName(e.target.value)}
+            placeholder="SliilS"
+          />
+        </label>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="sl-primary"
+            disabled={saveMutation.isPending}
+            onClick={() => saveMutation.mutate()}
+          >
+            {saveMutation.isPending ? 'Saving…' : 'Save configuration'}
+          </button>
+          {status?.kind === 'ok' && <span className="sl-success">{status.text}</span>}
+          {status?.kind === 'err' && <span className="sl-error">{status.text}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function useInfrastructure() {
+  return useQuery({
+    queryKey: ['install', 'infrastructure'],
+    queryFn: () => getInstallInfrastructure(),
+  });
+}
+
+function useInfraPatchMutation(
+  onSuccess?: (cfg: InstallInfrastructure) => void,
+) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (input: PatchInstallInfrastructure) =>
+      patchInstallInfrastructure(input),
+    onSuccess: (cfg) => {
+      qc.setQueryData(['install', 'infrastructure'], cfg);
+      onSuccess?.(cfg);
+    },
+  });
+}
+
+function VAPIDCard(): ReactElement {
+  const infraQuery = useInfrastructure();
+  const [publicKey, setPublicKey] = useState('');
+  const [privateKey, setPrivateKey] = useState('');
+  const [subject, setSubject] = useState('');
+  const [status, setStatus] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!infraQuery.data) return;
+    if (infraQuery.data.vapid_public_key && publicKey === '') {
+      setPublicKey(infraQuery.data.vapid_public_key);
+    }
+    if (infraQuery.data.vapid_subject && subject === '') {
+      setSubject(infraQuery.data.vapid_subject);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infraQuery.data]);
+
+  const save = useInfraPatchMutation(() => {
+    setPrivateKey('');
+    setStatus({ kind: 'ok', text: 'Saved.' });
+  });
+
+  const generate = useMutation({
+    mutationFn: () => generateVAPIDKeys(),
+    onSuccess: (kp) => {
+      setPublicKey(kp.public_key);
+      setPrivateKey(kp.private_key);
+      setStatus({ kind: 'ok', text: 'Fresh keypair generated. Click Save to persist.' });
+    },
+    onError: (err: Error) => setStatus({ kind: 'err', text: err.message }),
+  });
+
+  const infra = infraQuery.data;
+
+  return (
+    <div className="sl-admin-card" style={{ padding: 24, marginBottom: 16 }}>
+      <h2 className="sl-admin-section-title" style={{ marginBottom: 4 }}>
+        Web push (VAPID)
+      </h2>
+      <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        Super-admin only · identifies this install to push services
+      </div>
+      <p className="sl-muted" style={{ marginTop: 0 }}>
+        VAPID keys authenticate push messages from this install. Generate a
+        fresh keypair on first setup — the private key is encrypted at rest
+        and never returned by the API.
+      </p>
+
+      <div className="sl-admin-form">
+        <label>
+          <span>Public key</span>
+          <input
+            type="text"
+            value={publicKey}
+            onChange={(e) => setPublicKey(e.target.value)}
+            placeholder="BH… (base64url)"
+          />
+        </label>
+        <label>
+          <span>Private key {infra?.vapid_private_key_set ? '(configured — leave blank to keep)' : '(required)'}</span>
+          <input
+            type="password"
+            autoComplete="off"
+            value={privateKey}
+            onChange={(e) => setPrivateKey(e.target.value)}
+            placeholder={infra?.vapid_private_key_set ? '•••••• (unchanged)' : 'base64url private key'}
+          />
+        </label>
+        <label>
+          <span>Subject</span>
+          <input
+            type="text"
+            value={subject}
+            onChange={(e) => setSubject(e.target.value)}
+            placeholder="mailto:ops@yourdomain.com"
+          />
+        </label>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="sl-primary"
+            disabled={save.isPending}
+            onClick={() =>
+              save.mutate({
+                vapid_public_key: publicKey,
+                vapid_private_key: privateKey,
+                vapid_subject: subject,
+              })
+            }
+          >
+            {save.isPending ? 'Saving…' : 'Save configuration'}
+          </button>
+          <button
+            type="button"
+            className="sl-notif-btn"
+            disabled={generate.isPending}
+            onClick={() => generate.mutate()}
+          >
+            {generate.isPending ? 'Generating…' : 'Generate new keypair'}
+          </button>
+          {status?.kind === 'ok' && <span className="sl-success">{status.text}</span>}
+          {status?.kind === 'err' && <span className="sl-error">{status.text}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function CollaboraCard(): ReactElement {
+  const infraQuery = useInfrastructure();
+  const [url, setUrl] = useState('');
+  const [status, setStatus] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (infraQuery.data?.collabora_url && url === '') {
+      setUrl(infraQuery.data.collabora_url);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infraQuery.data]);
+
+  const save = useInfraPatchMutation(() => setStatus({ kind: 'ok', text: 'Saved.' }));
+
+  return (
+    <div className="sl-admin-card" style={{ padding: 24, marginBottom: 16 }}>
+      <h2 className="sl-admin-section-title" style={{ marginBottom: 4 }}>
+        Collabora Online (office docs)
+      </h2>
+      <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        Super-admin only · optional · powers in-browser editing of uploaded docs
+      </div>
+
+      <div className="sl-admin-form">
+        <label>
+          <span>Collabora URL</span>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://collabora.yourdomain.com"
+          />
+        </label>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="sl-primary"
+            disabled={save.isPending}
+            onClick={() => save.mutate({ collabora_url: url })}
+          >
+            {save.isPending ? 'Saving…' : 'Save configuration'}
+          </button>
+          {status?.kind === 'ok' && <span className="sl-success">{status.text}</span>}
+          {status?.kind === 'err' && <span className="sl-error">{status.text}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function YSweetCard(): ReactElement {
+  const infraQuery = useInfrastructure();
+  const [url, setUrl] = useState('');
+  const [token, setToken] = useState('');
+  const [status, setStatus] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (infraQuery.data?.ysweet_url && url === '') {
+      setUrl(infraQuery.data.ysweet_url);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infraQuery.data]);
+
+  const save = useInfraPatchMutation(() => {
+    setToken('');
+    setStatus({ kind: 'ok', text: 'Saved.' });
+  });
+
+  const infra = infraQuery.data;
+
+  return (
+    <div className="sl-admin-card" style={{ padding: 24, marginBottom: 16 }}>
+      <h2 className="sl-admin-section-title" style={{ marginBottom: 4 }}>
+        Y-Sweet (collaborative pages)
+      </h2>
+      <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        Super-admin only · optional · backs the Pages multi-cursor experience
+      </div>
+
+      <div className="sl-admin-form">
+        <label>
+          <span>Y-Sweet URL</span>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://ysweet.yourdomain.com"
+          />
+        </label>
+        <label>
+          <span>Server token {infra?.ysweet_server_token_set ? '(configured — leave blank to keep)' : '(required)'}</span>
+          <input
+            type="password"
+            autoComplete="off"
+            value={token}
+            onChange={(e) => setToken(e.target.value)}
+            placeholder={infra?.ysweet_server_token_set ? '•••••• (unchanged)' : 'ys_...'}
+          />
+        </label>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="sl-primary"
+            disabled={save.isPending}
+            onClick={() =>
+              save.mutate({
+                ysweet_url: url,
+                ysweet_server_token: token,
+              })
+            }
+          >
+            {save.isPending ? 'Saving…' : 'Save configuration'}
+          </button>
+          {status?.kind === 'ok' && <span className="sl-success">{status.text}</span>}
+          {status?.kind === 'err' && <span className="sl-error">{status.text}</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function LiveKitCard(): ReactElement {
+  const infraQuery = useInfrastructure();
+  const [url, setUrl] = useState('');
+  const [wsUrl, setWsUrl] = useState('');
+  const [apiKey, setApiKey] = useState('');
+  const [secret, setSecret] = useState('');
+  const [status, setStatus] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null);
+
+  useEffect(() => {
+    if (!infraQuery.data) return;
+    if (infraQuery.data.livekit_url && url === '') setUrl(infraQuery.data.livekit_url);
+    if (infraQuery.data.livekit_ws_url && wsUrl === '') setWsUrl(infraQuery.data.livekit_ws_url);
+    if (infraQuery.data.livekit_api_key && apiKey === '') setApiKey(infraQuery.data.livekit_api_key);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [infraQuery.data]);
+
+  const save = useInfraPatchMutation(() => {
+    setSecret('');
+    setStatus({ kind: 'ok', text: 'Saved.' });
+  });
+
+  const infra = infraQuery.data;
+
+  return (
+    <div className="sl-admin-card" style={{ padding: 24, marginBottom: 16 }}>
+      <h2 className="sl-admin-section-title" style={{ marginBottom: 4 }}>
+        LiveKit (calls + meetings)
+      </h2>
+      <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
+        Super-admin only · optional · powers voice, video, and screen share
+      </div>
+
+      <div className="sl-admin-form">
+        <label>
+          <span>HTTP URL</span>
+          <input
+            type="url"
+            value={url}
+            onChange={(e) => setUrl(e.target.value)}
+            placeholder="https://livekit.yourdomain.com"
+          />
+        </label>
+        <label>
+          <span>WebSocket URL</span>
+          <input
+            type="url"
+            value={wsUrl}
+            onChange={(e) => setWsUrl(e.target.value)}
+            placeholder="wss://livekit.yourdomain.com"
+          />
+        </label>
+        <label>
+          <span>API key</span>
+          <input
+            type="text"
+            value={apiKey}
+            onChange={(e) => setApiKey(e.target.value)}
+            placeholder="APIxxxx"
+          />
+        </label>
+        <label>
+          <span>API secret {infra?.livekit_api_secret_set ? '(configured — leave blank to keep)' : '(required)'}</span>
+          <input
+            type="password"
+            autoComplete="off"
+            value={secret}
+            onChange={(e) => setSecret(e.target.value)}
+            placeholder={infra?.livekit_api_secret_set ? '•••••• (unchanged)' : 'secret'}
+          />
+        </label>
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
+          <button
+            type="button"
+            className="sl-primary"
+            disabled={save.isPending}
+            onClick={() =>
+              save.mutate({
+                livekit_url: url,
+                livekit_ws_url: wsUrl,
+                livekit_api_key: apiKey,
+                livekit_api_secret: secret,
+              })
+            }
+          >
+            {save.isPending ? 'Saving…' : 'Save configuration'}
+          </button>
+          {status?.kind === 'ok' && <span className="sl-success">{status.text}</span>}
+          {status?.kind === 'err' && <span className="sl-error">{status.text}</span>}
+        </div>
       </div>
     </div>
   );

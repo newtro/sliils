@@ -8,10 +8,11 @@ import (
 // can't accidentally leak password_hash or totp_secret in a handler.
 func userFromRow(u *sqlcgen.User) UserDTO {
 	dto := UserDTO{
-		ID:          u.ID,
-		Email:       u.Email,
-		DisplayName: u.DisplayName,
-		CreatedAt:   u.CreatedAt.Time,
+		ID:           u.ID,
+		Email:        u.Email,
+		DisplayName:  u.DisplayName,
+		CreatedAt:    u.CreatedAt.Time,
+		IsSuperAdmin: u.IsSuperAdmin,
 	}
 	if u.EmailVerifiedAt.Valid {
 		t := u.EmailVerifiedAt.Time

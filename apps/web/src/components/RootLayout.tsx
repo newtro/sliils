@@ -4,6 +4,7 @@ import { Outlet } from 'react-router';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { AuthProvider } from '../auth/AuthContext';
 import { ThemeProvider } from '../theme/ThemeContext';
+import { FirstRunGate } from './FirstRunGate';
 
 export function RootLayout(): ReactElement {
   // One QueryClient per tab. Short staleTime because realtime events
@@ -21,9 +22,11 @@ export function RootLayout(): ReactElement {
     <ThemeProvider>
       <QueryClientProvider client={qc}>
         <AuthProvider>
-          <div className="sl-shell">
-            <Outlet />
-          </div>
+          <FirstRunGate>
+            <div className="sl-shell">
+              <Outlet />
+            </div>
+          </FirstRunGate>
         </AuthProvider>
       </QueryClientProvider>
     </ThemeProvider>

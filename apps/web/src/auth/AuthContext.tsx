@@ -11,6 +11,7 @@ export interface User {
   email_verified_at?: string;
   created_at: string;
   needs_setup: boolean;
+  is_super_admin: boolean;
 }
 
 export interface SessionResponse {
@@ -26,6 +27,9 @@ export interface AuthContextValue {
   refreshMe: () => Promise<User | null>;
   loginWithPassword: (email: string, password: string) => Promise<User>;
   signup: (email: string, password: string, displayName: string, inviteToken?: string) => Promise<User>;
+  // completeBootstrap applies an access token returned by /first-run/bootstrap
+  // and immediately fetches /me so the UI knows the admin is signed in.
+  completeBootstrap: (accessToken: string) => Promise<User | null>;
   requestMagicLink: (email: string) => Promise<void>;
   consumeMagicLink: (token: string) => Promise<User>;
   requestPasswordReset: (email: string) => Promise<void>;
@@ -98,6 +102,14 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
       return null;
     }
   }, []);
+
+  const completeBootstrap = useCallback(
+    async (accessToken: string): Promise<User | null> => {
+      tokenRef.current = accessToken;
+      return refreshMe();
+    },
+    [refreshMe],
+  );
 
   const loginWithPassword = useCallback(
     async (email: string, password: string): Promise<User> => {
@@ -197,6 +209,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
       refreshMe,
       loginWithPassword,
       signup,
+      completeBootstrap,
       requestMagicLink,
       consumeMagicLink,
       requestPasswordReset,
@@ -210,6 +223,7 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
       refreshMe,
       loginWithPassword,
       signup,
+      completeBootstrap,
       requestMagicLink,
       consumeMagicLink,
       requestPasswordReset,

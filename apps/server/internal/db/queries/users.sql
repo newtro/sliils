@@ -43,3 +43,14 @@ WHERE id = $1;
 UPDATE users
 SET display_name = $2
 WHERE id = $1;
+
+-- name: CountActiveUsers :one
+-- Used by the first-run wizard to decide whether bootstrap is allowed.
+-- Zero active users = fresh install; any existing user = already set up.
+SELECT count(*) FROM users WHERE deactivated_at IS NULL;
+
+-- name: PromoteToSuperAdmin :exec
+UPDATE users SET is_super_admin = true WHERE id = $1;
+
+-- name: DemoteFromSuperAdmin :exec
+UPDATE users SET is_super_admin = false WHERE id = $1;
