@@ -30,7 +30,7 @@ Every team of eight pays $200+ / month for Slack, Teams, or Google Chat and gets
 
 ## Status
 
-**M10 of 12 shipped.** Every milestone ends with passing integration tests (`go test -tags=integration`) and a live browser demo. See [docs/kickoff/implementation-roadmap.md](docs/kickoff/implementation-roadmap.md) for the plan.
+**M11 of 12 shipped.** Every milestone ends with passing integration tests (`go test -tags=integration`) and a live browser demo. See [docs/kickoff/implementation-roadmap.md](docs/kickoff/implementation-roadmap.md) for the plan.
 
 | # | Milestone | State | Highlights |
 |---|---|---|---|
@@ -45,7 +45,7 @@ Every team of eight pays $200+ / month for Slack, Teams, or Google Chat and gets
 | M8 | Voice / video calls | ✅ | LiveKit SFU + DMs + meetings, incoming-call banner, background blur |
 | M9 | Calendar | ✅ | RFC 5545 RRULE, RSVPs, reminders, iCal feed, Google Calendar bidirectional sync |
 | M10 | Pages + Collabora | ✅ | TipTap + Yjs via Y-Sweet, page comments + version history, WOPI for .docx/.xlsx/.pptx |
-| M11 | Push notifications | ⏳ | VAPID web push, service worker, push proxy, DND / quiet hours |
+| M11 | Push notifications | ✅ | VAPID web push, service worker, DND / quiet hours, mention + DM fanout |
 | M12 | Apps platform + GA | ⏳ | OAuth 2.0, Block-Kit, webhooks, admin dashboard, GDPR export, WCAG 2.1 AA |
 
 ### Screenshots
