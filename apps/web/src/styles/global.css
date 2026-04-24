@@ -2322,6 +2322,11 @@ button {
 }
 .sl-prefs-text {
   flex: 1;
+  /* Flex items default to min-width: auto which is the intrinsic
+   * content width — that lets the "What's going on?" placeholder
+   * force the field to overflow the popover. Allow it to shrink. */
+  min-width: 0;
+  width: 100%;
   padding: 6px 8px;
   border: 1px solid var(--border);
   border-radius: 6px;
