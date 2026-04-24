@@ -315,6 +315,19 @@ type Session struct {
 	RevokedAt        pgtype.Timestamptz
 }
 
+type SlashCommand struct {
+	ID                int64
+	WorkspaceID       int64
+	AppInstallationID int64
+	Command           string
+	TargetUrl         string
+	Description       string
+	UsageHint         string
+	SigningSecretHash string
+	CreatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+}
+
 type User struct {
 	ID                   int64
 	Email                string
@@ -349,6 +362,30 @@ type UserDevice struct {
 	LastSeenAt     pgtype.Timestamptz
 	DisabledAt     pgtype.Timestamptz
 	DisabledReason string
+}
+
+type WebhooksIncoming struct {
+	ID                int64
+	WorkspaceID       int64
+	ChannelID         int64
+	Name              string
+	Token             string
+	SigningSecretHash string
+	CreatedBy         *int64
+	CreatedAt         pgtype.Timestamptz
+	LastUsedAt        pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
+}
+
+type WebhooksOutgoing struct {
+	ID                int64
+	WorkspaceID       int64
+	AppInstallationID int64
+	EventPattern      string
+	TargetUrl         string
+	SigningSecretHash string
+	CreatedAt         pgtype.Timestamptz
+	DeletedAt         pgtype.Timestamptz
 }
 
 type Workspace struct {

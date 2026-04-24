@@ -237,6 +237,9 @@ func (s *Server) routes() {
 	s.mountWOPI(api)
 	s.mountDevApps(api)
 	s.mountOAuthApps(api)
+	s.mountWebhooks(api)
+	s.mountBotAPI(api)
+	s.mountSlashCommands(api)
 }
 
 func (s *Server) splashPage(c echo.Context) error {
