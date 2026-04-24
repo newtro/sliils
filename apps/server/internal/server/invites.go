@@ -78,6 +78,7 @@ func (s *Server) mountInvites(api *echo.Group) {
 	// Admin-only operations — scoped under /workspaces/:slug/invites.
 	admin := api.Group("/workspaces/:slug/invites")
 	admin.Use(s.requireAuth())
+	admin.Use(s.requireTenantWriteLimit())
 	admin.POST("", s.createInvite)
 	admin.GET("", s.listInvites)
 	admin.DELETE("/:id", s.revokeInvite)
@@ -429,20 +430,44 @@ func (s *Server) acceptInvite(c echo.Context) error {
 		return problem.Forbidden("this invite is for a different email address")
 	}
 
+	// If there's already a deactivated membership, fail fast so an
+	// ex-member can't sneak back in via an old invite URL after an admin
+	// kicked them. The upsert ON CONFLICT clause WHERE deactivated_at IS
+	// NULL would otherwise silently no-op, returning zero rows and a
+	// misleading success.
+	if deactivated, err := q.IsWorkspaceMembershipDeactivated(c.Request().Context(), sqlcgen.IsWorkspaceMembershipDeactivatedParams{
+		WorkspaceID: row.WorkspaceID,
+		UserID:      user.ID,
+	}); err != nil {
+		s.logger.Error("invite accept: deactivation probe", "error", err.Error())
+		return problem.Internal("could not verify membership state")
+	} else if deactivated {
+		return problem.Forbidden("your access to this workspace was revoked; ask an admin to reactivate you")
+	}
+
 	if _, err := q.InsertWorkspaceMembershipFromInvite(c.Request().Context(), sqlcgen.InsertWorkspaceMembershipFromInviteParams{
 		WorkspaceID: row.WorkspaceID,
 		UserID:      user.ID,
 		Role:        row.Role,
 	}); err != nil {
-		return problem.Internal("enroll membership: " + err.Error())
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Race: someone deactivated this user's membership between
+			// our probe above and the upsert. Stay consistent with the
+			// probe's answer.
+			return problem.Forbidden("your access to this workspace was revoked; ask an admin to reactivate you")
+		}
+		s.logger.Error("invite accept: enroll membership", "error", err.Error())
+		return problem.Internal("could not enroll you in the workspace")
 	}
 
+	// Transactionally marking the invite accepted is a best-effort step
+	// here — if it fails the membership stands, but we surface the error
+	// so the operator can retry the mark-accepted query via a backfill.
 	if err := q.MarkInviteAccepted(c.Request().Context(), sqlcgen.MarkInviteAcceptedParams{
 		ID:         row.ID,
 		AcceptedBy: &user.ID,
 	}); err != nil {
-		// Membership is already created; this is cosmetic. Log and continue.
-		s.logger.Warn("mark invite accepted failed", "error", err.Error(), "invite_id", row.ID)
+		s.logger.Error("mark invite accepted failed", "error", err.Error(), "invite_id", row.ID)
 	}
 
 	s.auditor.Record(c.Request().Context(), audit.Event{

@@ -6,6 +6,8 @@ import (
 
 	"github.com/labstack/echo/v4"
 
+	"github.com/sliils/sliils/apps/server/internal/audit"
+	"github.com/sliils/sliils/apps/server/internal/db/sqlcgen"
 	"github.com/sliils/sliils/apps/server/internal/email"
 	"github.com/sliils/sliils/apps/server/internal/install"
 	"github.com/sliils/sliils/apps/server/internal/problem"
@@ -80,6 +82,13 @@ func (s *Server) mountAdminIntegrations(api *echo.Group) {
 	inst.GET("/infrastructure", s.getInstallInfrastructure)
 	inst.PATCH("/infrastructure", s.patchInstallInfrastructure)
 	inst.POST("/vapid/generate", s.generateVAPIDKeys)
+	// Super-admin management: list current super-admins so an operator
+	// can promote a backup before demoting themselves. The demote path
+	// refuses to remove the last active super-admin so the install
+	// cannot be locked out of /install/* by a single mis-click.
+	inst.GET("/super-admins", s.listSuperAdmins)
+	inst.POST("/super-admins/:uid/promote", s.promoteSuperAdmin)
+	inst.POST("/super-admins/:uid/demote", s.demoteSuperAdmin)
 }
 
 // ---- install-level -----------------------------------------------------
@@ -464,10 +473,122 @@ func (s *Server) patchInstallInfrastructure(c echo.Context) error {
 func (s *Server) generateVAPIDKeys(c echo.Context) error {
 	priv, pub, err := push.GenerateVAPIDKeys()
 	if err != nil {
-		return problem.Internal("generate vapid keypair: " + err.Error())
+		s.logger.Error("generate vapid keypair", "error", err.Error())
+		return problem.Internal("could not generate keypair")
+	}
+	actor := userFromContext(c)
+	if s.auditor != nil {
+		s.auditor.Record(c.Request().Context(), audit.Event{
+			ActorUserID: &actor.ID,
+			ActorIP:     clientIP(c),
+			Action:      "install.vapid_generated",
+			TargetKind:  "install",
+		})
 	}
 	return c.JSON(http.StatusOK, map[string]string{
 		"public_key":  pub,
 		"private_key": priv,
 	})
+}
+
+// ---- super-admin management -------------------------------------------
+
+type superAdminDTO struct {
+	ID          int64  `json:"id"`
+	Email       string `json:"email"`
+	DisplayName string `json:"display_name"`
+	CreatedAt   string `json:"created_at"`
+}
+
+func (s *Server) listSuperAdmins(c echo.Context) error {
+	if s.ownerPool == nil {
+		return problem.Internal("super-admin listing requires the owner pool")
+	}
+	q := sqlcgen.New(s.ownerPool)
+	rows, err := q.ListActiveSuperAdmins(c.Request().Context())
+	if err != nil {
+		s.logger.Error("list super admins", "error", err.Error())
+		return problem.Internal("could not list super-admins")
+	}
+	out := make([]superAdminDTO, 0, len(rows))
+	for _, r := range rows {
+		out = append(out, superAdminDTO{
+			ID:          r.ID,
+			Email:       r.Email,
+			DisplayName: r.DisplayName,
+			CreatedAt:   r.CreatedAt.Time.UTC().Format("2006-01-02T15:04:05Z"),
+		})
+	}
+	return c.JSON(http.StatusOK, out)
+}
+
+func (s *Server) promoteSuperAdmin(c echo.Context) error {
+	if s.ownerPool == nil {
+		return problem.Internal("super-admin promotion requires the owner pool")
+	}
+	target, err := parseInt64Param(c, "uid")
+	if err != nil {
+		return err
+	}
+	actor := userFromContext(c)
+	q := sqlcgen.New(s.ownerPool)
+	if err := q.PromoteToSuperAdmin(c.Request().Context(), target); err != nil {
+		s.logger.Error("promote super admin", "error", err.Error(), "target", target)
+		return problem.Internal("could not promote user")
+	}
+	s.recordAudit(c, 0, actor.ID, "install.super_admin_promoted", "user", &target, nil)
+	return c.NoContent(http.StatusNoContent)
+}
+
+func (s *Server) demoteSuperAdmin(c echo.Context) error {
+	if s.ownerPool == nil {
+		return problem.Internal("super-admin demotion requires the owner pool")
+	}
+	target, err := parseInt64Param(c, "uid")
+	if err != nil {
+		return err
+	}
+	actor := userFromContext(c)
+
+	// Re-check within a transaction so two concurrent demotes can't both
+	// see count==2 and both succeed, leaving zero. pg_advisory_xact_lock
+	// serialises them; the count-then-update is safe under SERIALIZABLE.
+	ctx := c.Request().Context()
+	tx, err := s.ownerPool.Begin(ctx)
+	if err != nil {
+		s.logger.Error("demote super admin: begin tx", "error", err.Error())
+		return problem.Internal("database unavailable")
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", firstRunBootstrapLockID); err != nil {
+		s.logger.Error("demote super admin: lock", "error", err.Error())
+		return problem.Internal("database unavailable")
+	}
+	txQ := sqlcgen.New(tx)
+	n, err := txQ.CountActiveSuperAdmins(ctx)
+	if err != nil {
+		s.logger.Error("demote super admin: count", "error", err.Error())
+		return problem.Internal("could not read super-admin count")
+	}
+	if n <= 1 {
+		return problem.Conflict("cannot demote the last super-admin — promote another user first")
+	}
+	if err := txQ.DemoteFromSuperAdmin(ctx, target); err != nil {
+		s.logger.Error("demote super admin: update", "error", err.Error(), "target", target)
+		return problem.Internal("could not demote user")
+	}
+	if err := tx.Commit(ctx); err != nil {
+		s.logger.Error("demote super admin: commit", "error", err.Error())
+		return problem.Internal("database unavailable")
+	}
+	committed = true
+
+	s.recordAudit(c, 0, actor.ID, "install.super_admin_demoted", "user", &target, nil)
+	return c.NoContent(http.StatusNoContent)
 }

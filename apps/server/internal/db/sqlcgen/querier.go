@@ -27,6 +27,9 @@ type Querier interface {
 	// Single-use exchange: mark used atomically and return the row in one go.
 	// Returning 0 rows on a used/expired code lets the handler 400 cleanly.
 	ConsumeOAuthCode(ctx context.Context, code string) (AppOauthCode, error)
+	// Used by the demote handler to prevent removing the last super-admin,
+	// which would otherwise lock the install out of every /install/* endpoint.
+	CountActiveSuperAdmins(ctx context.Context) (int64, error)
 	// Used by the first-run wizard to decide whether bootstrap is allowed.
 	// Zero active users = fresh install; any existing user = already set up.
 	CountActiveUsers(ctx context.Context) (int64, error)
@@ -210,11 +213,24 @@ type Querier interface {
 	// set it here because the accepting user hasn't "selected" the workspace
 	// in their session yet). Safe because the token lookup above already
 	// proved the caller's right to enroll.
+	//
+	// ON CONFLICT reactivates only when the existing row is NOT marked
+	// deactivated. A previously-deactivated membership is a deliberate
+	// admin action (kicked user) that must not be undone by the ex-member
+	// re-accepting an old invite URL. Returns no rows in that case; the
+	// handler converts "no rows" to 403.
 	InsertWorkspaceMembershipFromInvite(ctx context.Context, arg InsertWorkspaceMembershipFromInviteParams) (WorkspaceMembership, error)
 	InvalidateActiveAuthTokens(ctx context.Context, arg InvalidateActiveAuthTokensParams) error
+	// Probe used by the accept path so the handler can 403 with a clear
+	// error instead of silently returning no rows from the conditional
+	// upsert above.
+	IsWorkspaceMembershipDeactivated(ctx context.Context, arg IsWorkspaceMembershipDeactivatedParams) (bool, error)
 	// Used by the pull worker. Returns every active connection across every
 	// user — owner pool only.
 	ListActiveExternalCalendars(ctx context.Context) ([]ExternalCalendar, error)
+	// Super-admin management UI: list everyone currently flagged so the
+	// operator can see who has install-wide rights and promote/demote as needed.
+	ListActiveSuperAdmins(ctx context.Context) ([]ListActiveSuperAdminsRow, error)
 	ListAppsForOwner(ctx context.Context, ownerUserID int64) ([]App, error)
 	// Hydrates attachments for a batch of messages in a single query. Joined
 	// against files so the client gets everything it needs to render a preview.

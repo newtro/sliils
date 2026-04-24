@@ -11,6 +11,19 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const countActiveSuperAdmins = `-- name: CountActiveSuperAdmins :one
+SELECT count(*) FROM users WHERE is_super_admin = true AND deactivated_at IS NULL
+`
+
+// Used by the demote handler to prevent removing the last super-admin,
+// which would otherwise lock the install out of every /install/* endpoint.
+func (q *Queries) CountActiveSuperAdmins(ctx context.Context) (int64, error) {
+	row := q.db.QueryRow(ctx, countActiveSuperAdmins)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countActiveUsers = `-- name: CountActiveUsers :one
 SELECT count(*) FROM users WHERE deactivated_at IS NULL
 `
@@ -165,6 +178,47 @@ func (q *Queries) IncrementFailedLogins(ctx context.Context, arg IncrementFailed
 	return i, err
 }
 
+const listActiveSuperAdmins = `-- name: ListActiveSuperAdmins :many
+SELECT id, email, display_name, created_at
+FROM users
+WHERE is_super_admin = true AND deactivated_at IS NULL
+ORDER BY id ASC
+`
+
+type ListActiveSuperAdminsRow struct {
+	ID          int64
+	Email       string
+	DisplayName string
+	CreatedAt   pgtype.Timestamptz
+}
+
+// Super-admin management UI: list everyone currently flagged so the
+// operator can see who has install-wide rights and promote/demote as needed.
+func (q *Queries) ListActiveSuperAdmins(ctx context.Context) ([]ListActiveSuperAdminsRow, error) {
+	rows, err := q.db.Query(ctx, listActiveSuperAdmins)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListActiveSuperAdminsRow{}
+	for rows.Next() {
+		var i ListActiveSuperAdminsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Email,
+			&i.DisplayName,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markEmailVerified = `-- name: MarkEmailVerified :exec
 UPDATE users
 SET email_verified_at = COALESCE(email_verified_at, now())
@@ -177,7 +231,7 @@ func (q *Queries) MarkEmailVerified(ctx context.Context, id int64) error {
 }
 
 const promoteToSuperAdmin = `-- name: PromoteToSuperAdmin :exec
-UPDATE users SET is_super_admin = true WHERE id = $1
+UPDATE users SET is_super_admin = true WHERE id = $1 AND deactivated_at IS NULL
 `
 
 func (q *Queries) PromoteToSuperAdmin(ctx context.Context, id int64) error {

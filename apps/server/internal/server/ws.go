@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"sync"
@@ -78,12 +79,17 @@ type wsHelloPayload struct {
 	ServerTime   time.Time     `json:"server_time"`
 }
 
+// upgrader has its CheckOrigin disabled at the library level because we
+// need access to *Server.cfg (for PublicBaseURL + AllowDevOrigins) to
+// decide which origins to accept. The actual origin check happens in
+// handleSocket before upgrader.Upgrade is called.
 var upgrader = websocket.Upgrader{
 	ReadBufferSize:  4 * 1024,
 	WriteBufferSize: 4 * 1024,
 	CheckOrigin: func(r *http.Request) bool {
-		// Cross-origin is handled by Echo's CORS middleware upstream; we
-		// only need to allow the Sec-WebSocket-Version upgrade here.
+		// Per-request check lives in handleSocket; this closure always
+		// returns true so the upgrade proceeds after we've already
+		// validated.
 		return true
 	},
 }
@@ -95,7 +101,40 @@ func (s *Server) mountWS(api *echo.Group) {
 	api.GET("/socket", s.handleSocket)
 }
 
+// isAllowedWSOrigin returns true if the given Origin header is safe:
+//   - empty origin (native app, curl, desktop Tauri shell) — accepted
+//     because those clients don't set one and their traffic is already
+//     gated by the access token.
+//   - same-origin (Origin host matches Request host) — accepted.
+//   - explicit match against PublicBaseURL / allowed dev origins.
+//
+// Anything else (foreign web page, bolted-on browser extension) is
+// refused so a stolen access token from user state cannot be exploited
+// cross-origin.
+func (s *Server) isAllowedWSOrigin(origin, host string) bool {
+	if origin == "" {
+		return true
+	}
+	if u, err := url.Parse(origin); err == nil && u.Host != "" && strings.EqualFold(u.Host, host) {
+		return true
+	}
+	for _, allowed := range allowedOrigins(s.cfg) {
+		if origin == allowed {
+			return true
+		}
+	}
+	return false
+}
+
 func (s *Server) handleSocket(c echo.Context) error {
+	// Origin enforcement: reject upgrade if the Origin header is cross-
+	// origin AND doesn't match PublicBaseURL or an allowed dev origin.
+	// Without this, any web page could open a WebSocket against the API
+	// using a stolen access token from the user's local state.
+	if !s.isAllowedWSOrigin(c.Request().Header.Get("Origin"), c.Request().Host) {
+		return problem.Forbidden("origin not allowed")
+	}
+
 	tokenStr := c.QueryParam("token")
 	if tokenStr == "" {
 		return problem.Unauthorized("missing ?token=<jwt>")

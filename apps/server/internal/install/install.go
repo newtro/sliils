@@ -119,26 +119,57 @@ func (s *Service) Get(ctx context.Context, key string) (string, error) {
 	return string(plain), nil
 }
 
-// Set upserts a key. When `encrypted` is true and an encryption box is
-// configured, the value is sealed before write; otherwise it goes in
-// plaintext and the `encrypted` flag still records the caller's intent
-// so future reads know how to treat it if a key is added later.
+// Set upserts a key. When `encrypted` is true, an encryption box MUST be
+// configured — we refuse to silently store secrets in plaintext because
+// operators were bitten by this pattern previously (install_settings
+// leaks via DB dumps). If you really want plaintext, pass encrypted=false.
 func (s *Service) Set(ctx context.Context, key, value string, encrypted bool, actorID *int64) error {
 	stored := value
-	if encrypted && s.box != nil && value != "" {
-		sealed, err := s.box.Encrypt([]byte(value))
-		if err != nil {
-			return fmt.Errorf("install: encrypt %q: %w", key, err)
+	if encrypted {
+		if s.box == nil {
+			return fmt.Errorf(
+				"install: refusing to store %q in plaintext — set SLIILS_SETTINGS_ENCRYPTION_KEY",
+				key,
+			)
 		}
-		stored = sealed
+		if value != "" {
+			sealed, err := s.box.Encrypt([]byte(value))
+			if err != nil {
+				return fmt.Errorf("install: encrypt %q: %w", key, err)
+			}
+			stored = sealed
+		}
 	}
 	q := sqlcgen.New(s.pool)
 	return q.UpsertInstallSetting(ctx, sqlcgen.UpsertInstallSettingParams{
 		Key:       key,
 		Value:     stored,
-		Encrypted: encrypted && s.box != nil,
+		Encrypted: encrypted,
 		UpdatedBy: actorID,
 	})
+}
+
+// EncryptForTx returns a ciphertext the caller can UPSERT directly. Used by
+// first-run bootstrap so secret persistence participates in the caller's
+// transaction rather than going through the service's own pool handle.
+// Refuses to encrypt when no box is configured.
+func (s *Service) EncryptForTx(value string) (string, error) {
+	if s.box == nil {
+		return "", fmt.Errorf(
+			"install: cannot encrypt — SLIILS_SETTINGS_ENCRYPTION_KEY is not set",
+		)
+	}
+	if value == "" {
+		return "", nil
+	}
+	return s.box.Encrypt([]byte(value))
+}
+
+// HasEncryption reports whether an encryption box is configured. Callers
+// use this to fail fast at request time if the operator tried to write
+// a secret without setting SLIILS_SETTINGS_ENCRYPTION_KEY.
+func (s *Service) HasEncryption() bool {
+	return s.box != nil
 }
 
 // Seed writes a default if the key is NOT already present. Used at

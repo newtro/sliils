@@ -3,6 +3,8 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/jackc/pgx/v5"
@@ -10,6 +12,7 @@ import (
 
 	"github.com/sliils/sliils/apps/server/internal/db/sqlcgen"
 	"github.com/sliils/sliils/apps/server/internal/problem"
+	"github.com/sliils/sliils/apps/server/internal/ratelimit"
 )
 
 type ctxKey string
@@ -93,4 +96,37 @@ func clientIP(c echo.Context) string {
 		return ip[:i]
 	}
 	return ip
+}
+
+// requireTenantWriteLimit throttles workspace-scoped write requests
+// (POST/PATCH/PUT/DELETE) so one noisy member can't flood the DB with
+// channels, messages, or uploads. GETs skip the check — reads are cheap
+// and legitimate users hammer them on page loads. Keys on (user, slug)
+// so one tenant's burst doesn't poison another's bucket.
+//
+// Mount AFTER requireAuth so userFromContext is populated. The slug is
+// read from c.Param("slug") — routes that don't use :slug are keyed by
+// user only, which still blunts per-user abuse.
+func (s *Server) requireTenantWriteLimit() echo.MiddlewareFunc {
+	return func(next echo.HandlerFunc) echo.HandlerFunc {
+		return func(c echo.Context) error {
+			switch c.Request().Method {
+			case http.MethodGet, http.MethodHead, http.MethodOptions:
+				return next(c)
+			}
+			user := userFromContext(c)
+			if user == nil {
+				// requireAuth should have run first; if not, let the
+				// downstream handler 401 rather than silently letting
+				// through.
+				return next(c)
+			}
+			slug := c.Param("slug")
+			key := fmt.Sprintf("tenant-write:%d:%s", user.ID, slug)
+			if !s.limiter.Allow(key, ratelimit.RuleTenantWrite) {
+				return problem.TooManyRequests("too many writes to this workspace — slow down")
+			}
+			return next(c)
+		}
+	}
 }

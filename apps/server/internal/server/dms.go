@@ -38,6 +38,7 @@ type createDMRequest struct {
 func (s *Server) mountDMs(api *echo.Group) {
 	g := api.Group("/workspaces/:slug/dms")
 	g.Use(s.requireAuth())
+	g.Use(s.requireTenantWriteLimit())
 	g.POST("", s.findOrCreateDM)
 	g.GET("", s.listDMs)
 }

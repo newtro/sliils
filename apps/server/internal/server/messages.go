@@ -80,6 +80,7 @@ type markReadRequest struct {
 func (s *Server) mountMessages(api *echo.Group) {
 	g := api.Group("")
 	g.Use(s.requireAuth())
+	g.Use(s.requireTenantWriteLimit())
 	g.POST("/channels/:channel_id/messages", s.createMessage)
 	g.GET("/channels/:channel_id/messages", s.listChannelMessages)
 	g.POST("/channels/:channel_id/mark-read", s.markRead)

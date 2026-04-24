@@ -205,7 +205,7 @@ function MembersTab({
 
       {!membersQuery.isLoading && members.length === 0 && (
         <div className="sl-admin-card sl-admin-empty">
-          <div className="sl-admin-empty-title">No one's here yet</div>
+          <div className="sl-admin-empty-title">No one&rsquo;s here yet</div>
           <p className="sl-muted" style={{ marginBottom: 16 }}>
             Invite someone to get started.
           </p>
@@ -621,9 +621,9 @@ function SignupModeCard(): ReactElement {
         Who can sign up
       </h2>
       <p className="sl-muted" style={{ marginTop: 0 }}>
-        This controls the whole install. "Invite only" means new accounts need
-        a valid invitation; "Open" lets anyone register and create their own
-        workspace (true multi-tenant).
+        This controls the whole install. &ldquo;Invite only&rdquo; means new
+        accounts need a valid invitation; &ldquo;Open&rdquo; lets anyone
+        register and create their own workspace (true multi-tenant).
       </p>
       <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
         <button
@@ -820,7 +820,8 @@ function VAPIDCard(): ReactElement {
       <p className="sl-muted" style={{ marginTop: 0 }}>
         VAPID keys authenticate push messages from this install. Generate a
         fresh keypair on first setup — the private key is encrypted at rest
-        and never returned by the API.
+        and never returned by the API. Changes take effect on the next
+        server restart.
       </p>
 
       <div className="sl-admin-form">
@@ -905,6 +906,9 @@ function CollaboraCard(): ReactElement {
       <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
         Super-admin only · optional · powers in-browser editing of uploaded docs
       </div>
+      <p className="sl-muted" style={{ marginTop: 0 }}>
+        Changes take effect on the next server restart.
+      </p>
 
       <div className="sl-admin-form">
         <label>
@@ -961,6 +965,9 @@ function YSweetCard(): ReactElement {
       <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
         Super-admin only · optional · backs the Pages multi-cursor experience
       </div>
+      <p className="sl-muted" style={{ marginTop: 0 }}>
+        Changes take effect on the next server restart.
+      </p>
 
       <div className="sl-admin-form">
         <label>
@@ -1035,6 +1042,9 @@ function LiveKitCard(): ReactElement {
       <div className="sl-muted" style={{ fontSize: 12, marginBottom: 8 }}>
         Super-admin only · optional · powers voice, video, and screen share
       </div>
+      <p className="sl-muted" style={{ marginTop: 0 }}>
+        Changes take effect on the next server restart.
+      </p>
 
       <div className="sl-admin-form">
         <label>

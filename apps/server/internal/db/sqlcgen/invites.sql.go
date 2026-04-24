@@ -130,8 +130,11 @@ INSERT INTO workspace_memberships (workspace_id, user_id, role)
 VALUES ($1, $2, $3)
 ON CONFLICT (workspace_id, user_id)
 DO UPDATE SET
-    deactivated_at = NULL,
     role = EXCLUDED.role
+    -- NB: deactivated_at is intentionally NOT cleared here. We only
+    -- touch the role so a legitimate upgrade via reinvite still works,
+    -- but a kicked user stays kicked until an admin reactivates them.
+WHERE workspace_memberships.deactivated_at IS NULL
 RETURNING id, workspace_id, user_id, role, custom_status, joined_at, deactivated_at, notify_pref
 `
 
@@ -146,6 +149,12 @@ type InsertWorkspaceMembershipFromInviteParams struct {
 // set it here because the accepting user hasn't "selected" the workspace
 // in their session yet). Safe because the token lookup above already
 // proved the caller's right to enroll.
+//
+// ON CONFLICT reactivates only when the existing row is NOT marked
+// deactivated. A previously-deactivated membership is a deliberate
+// admin action (kicked user) that must not be undone by the ex-member
+// re-accepting an old invite URL. Returns no rows in that case; the
+// handler converts "no rows" to 403.
 func (q *Queries) InsertWorkspaceMembershipFromInvite(ctx context.Context, arg InsertWorkspaceMembershipFromInviteParams) (WorkspaceMembership, error) {
 	row := q.db.QueryRow(ctx, insertWorkspaceMembershipFromInvite, arg.WorkspaceID, arg.UserID, arg.Role)
 	var i WorkspaceMembership
@@ -160,6 +169,29 @@ func (q *Queries) InsertWorkspaceMembershipFromInvite(ctx context.Context, arg I
 		&i.NotifyPref,
 	)
 	return i, err
+}
+
+const isWorkspaceMembershipDeactivated = `-- name: IsWorkspaceMembershipDeactivated :one
+SELECT count(*) > 0
+FROM workspace_memberships
+WHERE workspace_id = $1
+  AND user_id      = $2
+  AND deactivated_at IS NOT NULL
+`
+
+type IsWorkspaceMembershipDeactivatedParams struct {
+	WorkspaceID int64
+	UserID      int64
+}
+
+// Probe used by the accept path so the handler can 403 with a clear
+// error instead of silently returning no rows from the conditional
+// upsert above.
+func (q *Queries) IsWorkspaceMembershipDeactivated(ctx context.Context, arg IsWorkspaceMembershipDeactivatedParams) (bool, error) {
+	row := q.db.QueryRow(ctx, isWorkspaceMembershipDeactivated, arg.WorkspaceID, arg.UserID)
+	var column_1 bool
+	err := row.Scan(&column_1)
+	return column_1, err
 }
 
 const listPendingInvitesForWorkspace = `-- name: ListPendingInvitesForWorkspace :many

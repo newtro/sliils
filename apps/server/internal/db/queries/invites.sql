@@ -69,10 +69,29 @@ WHERE id = $1
 -- set it here because the accepting user hasn't "selected" the workspace
 -- in their session yet). Safe because the token lookup above already
 -- proved the caller's right to enroll.
+--
+-- ON CONFLICT reactivates only when the existing row is NOT marked
+-- deactivated. A previously-deactivated membership is a deliberate
+-- admin action (kicked user) that must not be undone by the ex-member
+-- re-accepting an old invite URL. Returns no rows in that case; the
+-- handler converts "no rows" to 403.
 INSERT INTO workspace_memberships (workspace_id, user_id, role)
 VALUES ($1, $2, $3)
 ON CONFLICT (workspace_id, user_id)
 DO UPDATE SET
-    deactivated_at = NULL,
     role = EXCLUDED.role
+    -- NB: deactivated_at is intentionally NOT cleared here. We only
+    -- touch the role so a legitimate upgrade via reinvite still works,
+    -- but a kicked user stays kicked until an admin reactivates them.
+WHERE workspace_memberships.deactivated_at IS NULL
 RETURNING *;
+
+-- name: IsWorkspaceMembershipDeactivated :one
+-- Probe used by the accept path so the handler can 403 with a clear
+-- error instead of silently returning no rows from the conditional
+-- upsert above.
+SELECT count(*) > 0
+FROM workspace_memberships
+WHERE workspace_id = $1
+  AND user_id      = $2
+  AND deactivated_at IS NOT NULL;

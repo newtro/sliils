@@ -258,14 +258,21 @@ func TestLoginAfterSignup(t *testing.T) {
 	assert.NotEmpty(t, resp.AccessToken)
 }
 
-func TestSignupDuplicateEmail(t *testing.T) {
+func TestSignupDuplicateEmailDoesNotEnumerate(t *testing.T) {
 	h := newHarness(t)
 	signup(t, h, "dave@example.com", "correct-horse-battery-staple")
 	drainEmails(h)
 
-	body := `{"email":"dave@example.com","password":"correct-horse-battery-staple","display_name":""}`
+	// Re-signup with an email that already exists. The response is
+	// intentionally indistinguishable from a first-time signup (202
+	// Accepted + generic "check your inbox" message) so a drive-by
+	// scanner can't enumerate registered emails by racing 200 vs 409.
+	body := `{"email":"dave@example.com","password":"correct-horse-battery-staple","display_name":"Dave"}`
 	rec := h.post("/api/v1/auth/signup", body, nil)
-	assert.Equal(t, http.StatusConflict, rec.Code)
+	assert.Equal(t, http.StatusAccepted, rec.Code, "body: %s", rec.Body.String())
+	// And the handler does NOT issue a fresh session for the existing
+	// account — the attacker gets nothing back but a vague message.
+	assert.NotContains(t, rec.Body.String(), "access_token")
 }
 
 func TestMagicLinkFlow(t *testing.T) {

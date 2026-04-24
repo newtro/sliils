@@ -15,16 +15,21 @@ import (
 
 	"github.com/sliils/sliils/apps/server/internal/audit"
 	"github.com/sliils/sliils/apps/server/internal/auth"
-	"github.com/sliils/sliils/apps/server/internal/db"
 	"github.com/sliils/sliils/apps/server/internal/db/sqlcgen"
 	"github.com/sliils/sliils/apps/server/internal/install"
 	"github.com/sliils/sliils/apps/server/internal/problem"
+	"github.com/sliils/sliils/apps/server/internal/ratelimit"
 )
 
 // Slug rules shared by first-run bootstrap and any future self-service
 // workspace-creation flow. 2-40 chars, lowercase alphanumerics + hyphens,
 // must start with a letter so it's a valid URL path component.
 var firstRunSlugPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,39}$`)
+
+// firstRunBootstrapLockID is a constant passed to pg_advisory_xact_lock
+// inside firstRunBootstrap. Any value fits in a bigint; pick one unlikely
+// to collide with other uses of advisory locks (there are none at v1).
+const firstRunBootstrapLockID int64 = 0x5a117f1857f17
 
 // First-run wizard (M12-polish).
 //
@@ -48,9 +53,10 @@ var firstRunSlugPattern = regexp.MustCompile(`^[a-z][a-z0-9-]{1,39}$`)
 //   GET  /api/v1/first-run/state   → {completed, users_count}
 //   POST /api/v1/first-run/bootstrap
 //
-// The bootstrap endpoint runs ONCE. It refuses (409) if any user
-// already exists, so a misconfigured setup can't silently hand out
-// super-admin to a second visitor.
+// The bootstrap endpoint runs ONCE. A pg_advisory_xact_lock held for
+// the life of the transaction serialises concurrent callers, and the
+// CountActiveUsers check is re-executed INSIDE that transaction so the
+// loser sees the first admin's row and gets 409.
 
 type firstRunStateDTO struct {
 	Completed  bool  `json:"completed"`
@@ -81,16 +87,17 @@ type bootstrapRequest struct {
 }
 
 type bootstrapResponse struct {
-	AccessToken    string `json:"access_token"`
-	TokenType      string `json:"token_type"`
-	ExpiresAt      string `json:"expires_at"`
-	WorkspaceSlug  string `json:"workspace_slug"`
-	UserID         int64  `json:"user_id"`
+	AccessToken   string `json:"access_token"`
+	TokenType     string `json:"token_type"`
+	ExpiresAt     string `json:"expires_at"`
+	WorkspaceSlug string `json:"workspace_slug"`
+	UserID        int64  `json:"user_id"`
 }
 
 func (s *Server) mountFirstRun(api *echo.Group) {
 	// Both endpoints are intentionally unauthenticated. `state` is
 	// read-only public; `bootstrap` self-gates on users-count == 0.
+	// Both are rate-limited to blunt a bored scanner.
 	api.GET("/first-run/state", s.firstRunState)
 	api.POST("/first-run/bootstrap", s.firstRunBootstrap)
 }
@@ -99,10 +106,15 @@ func (s *Server) firstRunState(c echo.Context) error {
 	if s.ownerPool == nil {
 		return problem.Internal("first-run state requires the owner pool")
 	}
+	ip := clientIP(c)
+	if !s.limiter.Allow("first-run-state:"+ip, ratelimit.RuleFirstRun) {
+		return problem.TooManyRequests("too many requests")
+	}
 	q := sqlcgen.New(s.ownerPool)
 	n, err := q.CountActiveUsers(c.Request().Context())
 	if err != nil {
-		return problem.Internal("count users: " + err.Error())
+		s.logger.Error("first-run state: count users", "error", err.Error())
+		return problem.Internal("could not read install state")
 	}
 	mode := install.SignupInviteOnly
 	if s.installSvc != nil {
@@ -123,22 +135,17 @@ func (s *Server) firstRunBootstrap(c echo.Context) error {
 		return problem.Internal("bootstrap requires the install service")
 	}
 
+	ip := clientIP(c)
+	if !s.limiter.Allow("first-run-bootstrap:"+ip, ratelimit.RuleFirstRun) {
+		return problem.TooManyRequests("too many requests")
+	}
+
 	var req bootstrapRequest
 	if err := c.Bind(&req); err != nil {
 		return problem.BadRequest("invalid body")
 	}
 
-	// 1. Self-gate: only runs when zero users exist.
-	ownerQ := sqlcgen.New(s.ownerPool)
-	n, err := ownerQ.CountActiveUsers(c.Request().Context())
-	if err != nil {
-		return problem.Internal("count users: " + err.Error())
-	}
-	if n > 0 {
-		return problem.Conflict("install is already initialised — sign in with an existing account")
-	}
-
-	// 2. Validate admin account.
+	// 1. Validate admin account.
 	email := strings.ToLower(strings.TrimSpace(req.Admin.Email))
 	if _, err := mail.ParseAddress(email); err != nil {
 		return problem.BadRequest("invalid admin email")
@@ -150,8 +157,11 @@ func (s *Server) firstRunBootstrap(c echo.Context) error {
 	if displayName == "" {
 		displayName = email
 	}
+	if err := validateDisplayName(displayName); err != nil {
+		return problem.BadRequest("display name: " + err.Error())
+	}
 
-	// 3. Validate signup mode.
+	// 2. Validate signup mode.
 	switch req.SignupMode {
 	case install.SignupOpen, install.SignupInviteOnly:
 	case "":
@@ -160,81 +170,166 @@ func (s *Server) firstRunBootstrap(c echo.Context) error {
 		return problem.BadRequest("signup_mode must be 'open' or 'invite_only'")
 	}
 
-	// 4. Validate workspace.
+	// 3. Validate workspace.
 	wsName := strings.TrimSpace(req.Workspace.Name)
 	wsSlug := strings.ToLower(strings.TrimSpace(req.Workspace.Slug))
-	if wsName == "" {
-		return problem.BadRequest("workspace name is required")
+	if err := validateWorkspaceName(wsName); err != nil {
+		return problem.BadRequest(err.Error())
 	}
 	if !firstRunSlugPattern.MatchString(wsSlug) {
 		return problem.BadRequest("workspace slug must be 2-40 lowercase letters, digits, or hyphens (must start with a letter)")
 	}
 
-	// 5. Create the admin user + promote to super-admin.
+	// 4. Hash password outside the transaction — argon2id is deliberately
+	//    slow and holding an advisory lock across it would serialise all
+	//    concurrent bootstraps for no benefit.
 	hash, err := s.hasher.Hash(req.Admin.Password)
 	if err != nil {
-		return problem.Internal("hash password: " + err.Error())
+		s.logger.Error("first-run: hash password", "error", err.Error())
+		return problem.Internal("could not hash password")
 	}
-	created, err := ownerQ.CreateUser(c.Request().Context(), sqlcgen.CreateUserParams{
+
+	// 5. Everything else runs inside ONE owner-pool transaction behind a
+	//    pg_advisory_xact_lock. The lock serialises concurrent bootstrap
+	//    attempts; the in-tx users-count re-check is what proves to the
+	//    loser that the install is no longer empty.
+	ctx := c.Request().Context()
+	tx, err := s.ownerPool.Begin(ctx)
+	if err != nil {
+		s.logger.Error("first-run: begin tx", "error", err.Error())
+		return problem.Internal("database unavailable")
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			_ = tx.Rollback(ctx)
+		}
+	}()
+
+	if _, err := tx.Exec(ctx, "SELECT pg_advisory_xact_lock($1)", firstRunBootstrapLockID); err != nil {
+		s.logger.Error("first-run: acquire advisory lock", "error", err.Error())
+		return problem.Internal("database unavailable")
+	}
+
+	txQ := sqlcgen.New(tx)
+
+	n, err := txQ.CountActiveUsers(ctx)
+	if err != nil {
+		s.logger.Error("first-run: count users", "error", err.Error())
+		return problem.Internal("database unavailable")
+	}
+	if n > 0 {
+		return problem.Conflict("install is already initialised — sign in with an existing account")
+	}
+
+	// Also set app.user_id=0 for the duration of this tx. Workspace insert
+	// runs under the owner role so RLS is bypassed, but being explicit here
+	// keeps the contract clear for future readers.
+	// (Owner pool connects without SET ROLE sliils_app, so RLS doesn't apply.)
+
+	created, err := txQ.CreateUser(ctx, sqlcgen.CreateUserParams{
 		Email:        email,
 		PasswordHash: &hash,
 		DisplayName:  displayName,
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return problem.Internal("create user returned no row")
+			s.logger.Error("first-run: create user returned no row")
+			return problem.Internal("could not create admin user")
 		}
-		return problem.Internal("create admin user: " + err.Error())
+		s.logger.Error("first-run: create user", "error", err.Error())
+		return problem.Internal("could not create admin user")
 	}
-	if err := ownerQ.MarkEmailVerified(c.Request().Context(), created.ID); err != nil {
-		s.logger.Warn("bootstrap: mark admin verified", "error", err.Error())
+	if err := txQ.MarkEmailVerified(ctx, created.ID); err != nil {
+		s.logger.Error("first-run: mark admin verified", "error", err.Error())
+		return problem.Internal("could not verify admin email")
 	}
-	if err := ownerQ.PromoteToSuperAdmin(c.Request().Context(), created.ID); err != nil {
-		return problem.Internal("promote super admin: " + err.Error())
+	if err := txQ.PromoteToSuperAdmin(ctx, created.ID); err != nil {
+		s.logger.Error("first-run: promote super admin", "error", err.Error())
+		return problem.Internal("could not promote admin")
 	}
 
-	// 6. Persist email config (optional — wizard allows skipping).
-	if strings.TrimSpace(req.Email.ResendAPIKey) != "" {
-		_ = s.installSvc.Set(c.Request().Context(), install.KeyInstallEmailProvider, firstNonEmptyStr(req.Email.Provider, "resend"), false, &created.ID)
-		_ = s.installSvc.Set(c.Request().Context(), install.KeyInstallResendAPIKey, strings.TrimSpace(req.Email.ResendAPIKey), true, &created.ID)
-		_ = s.installSvc.Set(c.Request().Context(), install.KeyInstallEmailFrom, strings.TrimSpace(req.Email.FromAddress), false, &created.ID)
-		_ = s.installSvc.Set(c.Request().Context(), install.KeyInstallEmailFromName, strings.TrimSpace(req.Email.FromName), false, &created.ID)
+	// Workspace + owner membership inside the same tx. Owner role bypasses
+	// RLS so we don't need app.workspace_id set.
+	ws, err := txQ.CreateWorkspace(ctx, sqlcgen.CreateWorkspaceParams{
+		Slug:        wsSlug,
+		Name:        wsName,
+		Description: req.Workspace.Description,
+		CreatedBy:   created.ID,
+	})
+	if err != nil {
+		s.logger.Error("first-run: create workspace", "error", err.Error(), "slug", wsSlug)
+		return problem.Internal("could not create workspace")
 	}
-	_ = s.installSvc.Set(c.Request().Context(), install.KeySignupMode, req.SignupMode, false, &created.ID)
-	_ = s.installSvc.Set(c.Request().Context(), install.KeyInstallSetupCompleted, "true", false, &created.ID)
+	if _, err := txQ.CreateMembership(ctx, sqlcgen.CreateMembershipParams{
+		WorkspaceID: ws.ID,
+		UserID:      created.ID,
+		Role:        "owner",
+	}); err != nil {
+		s.logger.Error("first-run: create membership", "error", err.Error())
+		return problem.Internal("could not create workspace membership")
+	}
 
-	// 7. Create the first workspace + owner membership. Workspace
-	// creation under the owner pool so we don't need app.user_id set.
-	var wsID int64
-	err = db.WithTx(c.Request().Context(), s.pool.Pool, db.TxOptions{UserID: created.ID}, func(scope db.TxScope) error {
-		ws, err := scope.Queries.CreateWorkspace(c.Request().Context(), sqlcgen.CreateWorkspaceParams{
-			Slug:        wsSlug,
-			Name:        wsName,
-			Description: req.Workspace.Description,
-			CreatedBy:   created.ID,
-		})
+	// Persist install settings inside the tx so a partial failure rolls
+	// everything back together. The install service uses its own pool
+	// reference; since we need these writes to participate in this tx
+	// we inline the upserts directly against the tx handle.
+	persistSetting := func(key, value string, encrypted bool) error {
+		if !encrypted {
+			return txQ.UpsertInstallSetting(ctx, sqlcgen.UpsertInstallSettingParams{
+				Key:       key,
+				Value:     value,
+				Encrypted: false,
+				UpdatedBy: &created.ID,
+			})
+		}
+		sealed, err := s.installSvc.EncryptForTx(value)
 		if err != nil {
 			return err
 		}
-		wsID = ws.ID
-		if _, err := scope.Queries.CreateMembership(c.Request().Context(), sqlcgen.CreateMembershipParams{
-			WorkspaceID: ws.ID,
-			UserID:      created.ID,
-			Role:        "owner",
-		}); err != nil {
-			return err
-		}
-		return nil
-	})
-	if err != nil {
-		return problem.Internal("create workspace: " + err.Error())
+		return txQ.UpsertInstallSetting(ctx, sqlcgen.UpsertInstallSettingParams{
+			Key:       key,
+			Value:     sealed,
+			Encrypted: true,
+			UpdatedBy: &created.ID,
+		})
 	}
 
-	// 8. Issue a session + refresh cookie so the wizard can land the
-	// user in their workspace without a separate login step.
+	if strings.TrimSpace(req.Email.ResendAPIKey) != "" {
+		if err := persistSetting(install.KeyInstallEmailProvider, firstNonEmptyStr(req.Email.Provider, "resend"), false); err != nil {
+			s.logger.Error("first-run: persist email provider", "error", err.Error())
+			return problem.Internal("could not save email provider")
+		}
+		if err := persistSetting(install.KeyInstallResendAPIKey, strings.TrimSpace(req.Email.ResendAPIKey), true); err != nil {
+			s.logger.Error("first-run: persist resend key", "error", err.Error())
+			return problem.BadRequest(err.Error())
+		}
+		if err := persistSetting(install.KeyInstallEmailFrom, strings.TrimSpace(req.Email.FromAddress), false); err != nil {
+			s.logger.Error("first-run: persist from address", "error", err.Error())
+			return problem.Internal("could not save from address")
+		}
+		if err := persistSetting(install.KeyInstallEmailFromName, strings.TrimSpace(req.Email.FromName), false); err != nil {
+			s.logger.Error("first-run: persist from name", "error", err.Error())
+			return problem.Internal("could not save from name")
+		}
+	}
+	if err := persistSetting(install.KeySignupMode, req.SignupMode, false); err != nil {
+		s.logger.Error("first-run: persist signup mode", "error", err.Error())
+		return problem.Internal("could not save signup mode")
+	}
+	if err := persistSetting(install.KeyInstallSetupCompleted, "true", false); err != nil {
+		s.logger.Error("first-run: persist setup completed", "error", err.Error())
+		return problem.Internal("could not save setup flag")
+	}
+
+	// Session + refresh cookie also live inside the tx so a commit-time
+	// failure (statement_timeout, replica lag) rolls back the session
+	// row instead of leaving a ghost row that points at the (rolled-back)
+	// user.
 	refresh, err := auth.RandomToken(32)
 	if err != nil {
-		return problem.Internal("mint refresh: " + err.Error())
+		s.logger.Error("first-run: mint refresh", "error", err.Error())
+		return problem.Internal("could not mint refresh token")
 	}
 	refreshExp := time.Now().Add(s.cfg.RefreshTokenTTL)
 	var ipAddr *netip.Addr
@@ -243,7 +338,7 @@ func (s *Server) firstRunBootstrap(c echo.Context) error {
 			ipAddr = &a
 		}
 	}
-	session, err := ownerQ.CreateSession(c.Request().Context(), sqlcgen.CreateSessionParams{
+	session, err := txQ.CreateSession(ctx, sqlcgen.CreateSessionParams{
 		UserID:           created.ID,
 		RefreshTokenHash: auth.HashToken(refresh),
 		UserAgent:        c.Request().UserAgent(),
@@ -251,12 +346,23 @@ func (s *Server) firstRunBootstrap(c echo.Context) error {
 		ExpiresAt:        pgtype.Timestamptz{Time: refreshExp, Valid: true},
 	})
 	if err != nil {
-		return problem.Internal("create session: " + err.Error())
+		s.logger.Error("first-run: create session", "error", err.Error())
+		return problem.Internal("could not create session")
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		s.logger.Error("first-run: commit", "error", err.Error())
+		return problem.Internal("database unavailable")
+	}
+	committed = true
+
 	setRefreshCookie(c, s.cfg, refresh, refreshExp)
 	token, exp, err := s.tokens.Issue(created.ID, session.ID, 0)
 	if err != nil {
-		return problem.Internal("issue token: " + err.Error())
+		// Tx is committed; the user exists. Surface the failure so the
+		// operator retries login rather than believing bootstrap failed.
+		s.logger.Error("first-run: issue access token", "error", err.Error())
+		return problem.Internal("bootstrap completed but access token could not be issued; sign in to continue")
 	}
 
 	if s.auditor != nil {
@@ -267,7 +373,7 @@ func (s *Server) firstRunBootstrap(c echo.Context) error {
 			TargetKind:  "install",
 			Metadata: map[string]any{
 				"workspace_slug": wsSlug,
-				"workspace_id":   wsID,
+				"workspace_id":   ws.ID,
 				"signup_mode":    req.SignupMode,
 			},
 		})
@@ -276,8 +382,54 @@ func (s *Server) firstRunBootstrap(c echo.Context) error {
 	return c.JSON(http.StatusCreated, bootstrapResponse{
 		AccessToken:   token,
 		TokenType:     "Bearer",
-		ExpiresAt:     exp.Format("2006-01-02T15:04:05.999999999Z07:00"),
+		ExpiresAt:     exp.UTC().Format(time.RFC3339Nano),
 		WorkspaceSlug: wsSlug,
 		UserID:        created.ID,
 	})
 }
+
+// validateDisplayName caps length and rejects control / bidi characters
+// that could impersonate other users in member lists or notifications.
+// Empty is allowed — the caller falls back to the email address (at
+// signup) or keeps the previous value (at update).
+func validateDisplayName(name string) error {
+	if len(name) > 64 {
+		return errors.New("must be 64 characters or fewer")
+	}
+	if name == "" {
+		return nil
+	}
+	return containsBidiOrControl(name)
+}
+
+// validateWorkspaceName caps length and rejects bidi/control chars that
+// could impersonate other workspaces in the picker.
+func validateWorkspaceName(name string) error {
+	if name == "" {
+		return errors.New("workspace name is required")
+	}
+	if len(name) > 80 {
+		return errors.New("workspace name must be 80 characters or fewer")
+	}
+	return containsBidiOrControl(name)
+}
+
+// containsBidiOrControl refuses strings that include Unicode right-to-left
+// override / embedding / isolate characters and ASCII/C0 controls. These
+// are classic impersonation + log-injection vectors.
+func containsBidiOrControl(s string) error {
+	for _, r := range s {
+		switch {
+		case r == '\r' || r == '\n' || r == '\t':
+			return errors.New("must not contain line breaks or tabs")
+		case r < 0x20:
+			return errors.New("must not contain control characters")
+		case r == 0x200E || r == 0x200F, // LRM / RLM
+			r == 0x202A || r == 0x202B || r == 0x202C || r == 0x202D || r == 0x202E, // LRE/RLE/PDF/LRO/RLO
+			r == 0x2066 || r == 0x2067 || r == 0x2068 || r == 0x2069: // LRI/RLI/FSI/PDI
+			return errors.New("must not contain bidirectional override characters")
+		}
+	}
+	return nil
+}
+

@@ -330,7 +330,7 @@ export function InviteDialog({
             )}
             {!workspacesQuery.isLoading && eligibleWorkspaces.length === 0 && (
               <p className="sl-muted" style={{ margin: 0 }}>
-                You're not an owner or admin on any workspace yet.
+                You&rsquo;re not an owner or admin on any workspace yet.
               </p>
             )}
             {eligibleWorkspaces.length > 0 && (

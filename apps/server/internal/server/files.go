@@ -38,6 +38,7 @@ type FileDTO struct {
 func (s *Server) mountFiles(api *echo.Group) {
 	g := api.Group("/files")
 	g.Use(s.requireAuth())
+	g.Use(s.requireTenantWriteLimit())
 	g.POST("", s.uploadFile)
 	g.GET("/:id/raw", s.downloadFile)
 }
@@ -138,6 +139,14 @@ func (s *Server) uploadFile(c echo.Context) error {
 
 // downloadFile streams a file's raw bytes to the authenticated user, after
 // verifying they're a member of the file's workspace.
+//
+// O(1) lookup: fetch the row once under the owner pool (bypasses RLS) to
+// learn the workspace_id, then verify membership via a single RLS-backed
+// query. Previously we iterated every membership which scaled badly and
+// had no channel-ACL notion; the membership check here still misses the
+// "file posted in a private channel I'm no longer in" case — acknowledged
+// and tracked; the workspace-membership gate is a strict improvement
+// over the old walk.
 func (s *Server) downloadFile(c echo.Context) error {
 	if s.storage == nil {
 		return problem.Internal("storage not configured")
@@ -148,37 +157,60 @@ func (s *Server) downloadFile(c echo.Context) error {
 		return problem.BadRequest("invalid id")
 	}
 
-	// Find the file: iterate user's workspaces under RLS. Same walk-the-
-	// memberships pattern we use for messages; at M5 volumes this is fine.
-	memberships, err := s.listUserWorkspaceIDs(c.Request().Context(), user.ID)
-	if err != nil {
-		return problem.Internal("list workspaces: " + err.Error())
-	}
-
-	var row *sqlcgen.File
-	for _, wsID := range memberships {
-		err := db.WithTx(c.Request().Context(), s.pool.Pool,
-			db.TxOptions{UserID: user.ID, WorkspaceID: wsID, ReadOnly: true},
-			func(scope db.TxScope) error {
-				f, err := scope.Queries.GetFileByID(c.Request().Context(), fileID)
-				if err != nil {
-					if errors.Is(err, pgx.ErrNoRows) {
-						return nil
-					}
-					return err
-				}
-				row = &f
-				return nil
-			})
+	var row sqlcgen.File
+	if s.ownerPool != nil {
+		ownerQ := sqlcgen.New(s.ownerPool)
+		r, err := ownerQ.GetFileByID(c.Request().Context(), fileID)
 		if err != nil {
-			return problem.Internal("load file: " + err.Error())
+			if errors.Is(err, pgx.ErrNoRows) {
+				return problem.NotFound("file not found")
+			}
+			s.logger.Error("download file: owner lookup", "error", err.Error())
+			return problem.Internal("could not read file")
 		}
-		if row != nil {
-			break
+		if !s.userInWorkspace(c.Request().Context(), user.ID, r.WorkspaceID) {
+			// Don't leak whether the id exists in a different workspace.
+			return problem.NotFound("file not found")
 		}
-	}
-	if row == nil {
-		return problem.NotFound("file not found")
+		row = r
+	} else {
+		// No owner pool wired — fall back to iterating the user's
+		// workspaces under RLS. Kept for tests and the slim-harness
+		// scenarios where SearchOwnerDB isn't available. Production
+		// always wires the owner pool, so the O(1) path above is the
+		// common case.
+		memberships, err := s.listUserWorkspaceIDs(c.Request().Context(), user.ID)
+		if err != nil {
+			s.logger.Error("download file: list workspaces", "error", err.Error())
+			return problem.Internal("could not list workspaces")
+		}
+		found := false
+		for _, wsID := range memberships {
+			err := db.WithTx(c.Request().Context(), s.pool.Pool,
+				db.TxOptions{UserID: user.ID, WorkspaceID: wsID, ReadOnly: true},
+				func(scope db.TxScope) error {
+					f, err := scope.Queries.GetFileByID(c.Request().Context(), fileID)
+					if err != nil {
+						if errors.Is(err, pgx.ErrNoRows) {
+							return nil
+						}
+						return err
+					}
+					row = f
+					found = true
+					return nil
+				})
+			if err != nil {
+				s.logger.Error("download file: rls lookup", "error", err.Error())
+				return problem.Internal("could not read file")
+			}
+			if found {
+				break
+			}
+		}
+		if !found {
+			return problem.NotFound("file not found")
+		}
 	}
 
 	if row.ScanStatus == "infected" {
@@ -187,13 +219,18 @@ func (s *Server) downloadFile(c echo.Context) error {
 
 	r, err := s.storage.Get(c.Request().Context(), row.StorageKey)
 	if err != nil {
-		return problem.Internal("read from storage: " + err.Error())
+		s.logger.Error("download file: storage read", "error", err.Error(), "file_id", fileID)
+		return problem.Internal("could not read file")
 	}
 	defer r.Close()
 
 	c.Response().Header().Set(echo.HeaderContentType, row.Mime)
 	c.Response().Header().Set(echo.HeaderContentLength, strconv.FormatInt(row.SizeBytes, 10))
-	c.Response().Header().Set("Content-Disposition", fmt.Sprintf("inline; filename=%q", row.Filename))
+	// Force attachment + nosniff so a browser can't be coerced into
+	// treating a user-uploaded file as HTML/JS. Images still display
+	// inline via the blob-URL path; this affects direct URL loads.
+	c.Response().Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=%q", row.Filename))
+	c.Response().Header().Set("X-Content-Type-Options", "nosniff")
 	c.Response().Header().Set("Cache-Control", "private, max-age=3600")
 
 	c.Response().WriteHeader(http.StatusOK)

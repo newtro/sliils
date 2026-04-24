@@ -27,6 +27,15 @@ var (
 	RuleMagicLinkIssue  = Rule{Capacity: 5, RefillEvery: 15 * time.Minute}
 	RulePasswordReset   = Rule{Capacity: 5, RefillEvery: 1 * time.Hour}
 	RuleGeneral         = Rule{Capacity: 1000, RefillEvery: 1 * time.Hour}
+	// RuleFirstRun gates /first-run/state + /first-run/bootstrap so a
+	// drive-by scanner can't hammer an install that's still coming up.
+	RuleFirstRun = Rule{Capacity: 30, RefillEvery: 1 * time.Minute}
+	// RuleTenantWrite applies to workspace-scoped create/upload paths
+	// (new channel, message, DM, invite, file upload). Keyed per
+	// workspace+user so one noisy member can't block other tenants.
+	// Capacity 60 in 10s means a burst of 60 then ~6/s sustained —
+	// enough for normal chat, stops a runaway script.
+	RuleTenantWrite = Rule{Capacity: 60, RefillEvery: 10 * time.Second}
 )
 
 type bucket struct {

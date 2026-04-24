@@ -117,6 +117,7 @@ type CommentDTO struct {
 func (s *Server) mountPages(api *echo.Group) {
 	g := api.Group("")
 	g.Use(s.requireAuth())
+	g.Use(s.requireTenantWriteLimit())
 
 	// Pages endpoints are always mounted so 404s from bad ids still return
 	// a consistent response. The pagesDisabled helper short-circuits with

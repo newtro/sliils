@@ -117,22 +117,31 @@ func (s *Server) authSignup(c echo.Context) error {
 	if err := validatePassword(req.Password); err != nil {
 		return problem.BadRequest(err.Error())
 	}
-	if len(req.DisplayName) > 64 {
-		return problem.BadRequest("display_name must be 64 characters or fewer")
+	if err := validateDisplayName(strings.TrimSpace(req.DisplayName)); err != nil {
+		return problem.BadRequest("display_name: " + err.Error())
 	}
 
-	// Does the email already exist?
+	// Account-exists is treated as a silent no-op so a drive-by can't
+	// enumerate emails by racing 201 vs 409. The legitimate user still
+	// gets the verification flow because the earlier CreateUser path
+	// would have gone the same way; a brand-new attacker sees "check
+	// your email" whether or not the address is known.
 	if existing, err := s.queries.GetUserByEmail(c.Request().Context(), req.Email); err == nil {
-		// Use 409 to signal collision; don't leak whether email was previously used.
 		_ = existing
-		return problem.Conflict("an account with that email already exists")
+		// Do a dummy hash to keep timing aligned with the create path.
+		_, _ = s.hasher.Hash(req.Password)
+		return c.JSON(http.StatusAccepted, messageResponse{
+			Message: "if that email was unused, check your inbox to confirm your account",
+		})
 	} else if !errors.Is(err, pgx.ErrNoRows) {
-		return problem.Internal("lookup user: " + err.Error())
+		s.logger.Error("signup: lookup user", "error", err.Error())
+		return problem.Internal("could not read users")
 	}
 
 	hash, err := s.hasher.Hash(req.Password)
 	if err != nil {
-		return problem.Internal("hash password: " + err.Error())
+		s.logger.Error("signup: hash password", "error", err.Error())
+		return problem.Internal("could not hash password")
 	}
 
 	created, err := s.queries.CreateUser(c.Request().Context(), sqlcgen.CreateUserParams{
@@ -141,7 +150,8 @@ func (s *Server) authSignup(c echo.Context) error {
 		DisplayName:  req.DisplayName,
 	})
 	if err != nil {
-		return problem.Internal("create user: " + err.Error())
+		s.logger.Error("signup: create user", "error", err.Error())
+		return problem.Internal("could not create user")
 	}
 
 	// Issue + email the verification token. Delivery failure shouldn't 500 the
@@ -603,12 +613,17 @@ func (s *Server) issueAndSendAuthToken(ctx context.Context, userID int64, emailA
 		return fmt.Errorf("store token: %w", err)
 	}
 
-	if s.email == nil {
+	// Resolve the sender at send-time, not once at boot. Admins configure
+	// email via the wizard or Admin → Integrations after the server is
+	// up; a cached-at-boot sender would keep silently dropping magic
+	// links forever even after the operator has set a valid API key.
+	sender := s.resolveInstallEmailSender(ctx)
+	if sender == nil {
 		return errors.New("email sender not configured")
 	}
 
 	msg := buildEmailForPurpose(purpose, emailAddr, s.cfg.PublicBaseURL, raw)
-	return s.email.Send(ctx, msg)
+	return sender.Send(ctx, msg)
 }
 
 func (s *Server) sendVerifyEmail(ctx context.Context, userID int64, emailAddr, ip string) error {

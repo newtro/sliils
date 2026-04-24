@@ -49,8 +49,21 @@ WHERE id = $1;
 -- Zero active users = fresh install; any existing user = already set up.
 SELECT count(*) FROM users WHERE deactivated_at IS NULL;
 
+-- name: CountActiveSuperAdmins :one
+-- Used by the demote handler to prevent removing the last super-admin,
+-- which would otherwise lock the install out of every /install/* endpoint.
+SELECT count(*) FROM users WHERE is_super_admin = true AND deactivated_at IS NULL;
+
+-- name: ListActiveSuperAdmins :many
+-- Super-admin management UI: list everyone currently flagged so the
+-- operator can see who has install-wide rights and promote/demote as needed.
+SELECT id, email, display_name, created_at
+FROM users
+WHERE is_super_admin = true AND deactivated_at IS NULL
+ORDER BY id ASC;
+
 -- name: PromoteToSuperAdmin :exec
-UPDATE users SET is_super_admin = true WHERE id = $1;
+UPDATE users SET is_super_admin = true WHERE id = $1 AND deactivated_at IS NULL;
 
 -- name: DemoteFromSuperAdmin :exec
 UPDATE users SET is_super_admin = false WHERE id = $1;

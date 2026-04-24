@@ -95,6 +95,25 @@ type Config struct {
 	PushProxyJWT     string // bearer we send to the push-proxy
 	PushTenantID     string // our identity to the push-proxy (billing + audit)
 	PushTTLSeconds   int    // how long push services should queue undelivered notifications
+
+	// Install secret encryption (stores VAPID private key, Resend API key,
+	// LiveKit secret, Y-Sweet token at rest). 32 raw bytes or 64 hex.
+	// Required in production; setting a secret without this key is refused.
+	SettingsEncryptionKey string
+
+	// Operations / hardening
+	//
+	// TrustedProxies is a comma-separated list of CIDRs belonging to the
+	// reverse proxy in front of the app (e.g. "10.0.0.0/8,192.168.1.0/24").
+	// When set, only X-Forwarded-For / X-Real-IP headers arriving from
+	// those CIDRs are honoured; everything else uses the direct socket
+	// address. Empty = direct socket address only (safe default; rate
+	// limits and audit IPs stop trusting attacker-supplied headers).
+	TrustedProxies string
+	// AllowDevOrigins, when true, adds http://localhost:5173 and
+	// http://localhost:1420 to the CORS allow-list. Default false; the
+	// dev bootstrap script flips it on for local workstations only.
+	AllowDevOrigins bool
 }
 
 func Load() (*Config, error) {
@@ -114,9 +133,9 @@ func Load() (*Config, error) {
 		EmailVerifyTTL:      getDurationEnv("SLIILS_EMAIL_VERIFY_TTL", 24*time.Hour),
 		PasswordResetTTL:    getDurationEnv("SLIILS_PASSWORD_RESET_TTL", 1*time.Hour),
 		MagicLinkTTL:        getDurationEnv("SLIILS_MAGIC_LINK_TTL", 15*time.Minute),
-		CookieSecure:        getBoolEnv("SLIILS_COOKIE_SECURE", false),
+		CookieSecure:        getBoolEnv("SLIILS_COOKIE_SECURE", true),
 		CookieDomain:        getenv("SLIILS_COOKIE_DOMAIN", ""),
-		CookieSameSite:      strings.ToLower(getenv("SLIILS_COOKIE_SAMESITE", "lax")),
+		CookieSameSite:      strings.ToLower(getenv("SLIILS_COOKIE_SAMESITE", "strict")),
 		PublicBaseURL:       strings.TrimRight(getenv("SLIILS_PUBLIC_BASE_URL", "http://localhost:5173"), "/"),
 		MaxFailedLogins:     getIntEnv("SLIILS_MAX_FAILED_LOGINS", 10),
 		LoginLockoutMinutes: getIntEnv("SLIILS_LOGIN_LOCKOUT_MINUTES", 15),
@@ -170,6 +189,10 @@ func Load() (*Config, error) {
 		PushProxyJWT:    getenv("SLIILS_PUSH_PROXY_JWT", ""),
 		PushTenantID:    getenv("SLIILS_PUSH_TENANT_ID", ""),
 		PushTTLSeconds:  getIntEnv("SLIILS_PUSH_TTL_SECONDS", 86400),
+
+		SettingsEncryptionKey: getenv("SLIILS_SETTINGS_ENCRYPTION_KEY", ""),
+		TrustedProxies:        getenv("SLIILS_TRUSTED_PROXIES", ""),
+		AllowDevOrigins:       getBoolEnv("SLIILS_ALLOW_DEV_ORIGINS", false),
 	}
 
 	if cfg.LogFormat != "json" && cfg.LogFormat != "text" {
@@ -192,6 +215,19 @@ func (c *Config) Validate() error {
 	}
 	if len(c.JWTSigningKey) < 32 {
 		return errors.New("SLIILS_JWT_SIGNING_KEY must be at least 32 bytes")
+	}
+	// Refuse insecure cookies in production. Operators who want http for a
+	// local reverse proxy set both PublicBaseURL=http://... AND
+	// SLIILS_ALLOW_DEV_ORIGINS=true, which signals "this is not prod".
+	if strings.HasPrefix(c.PublicBaseURL, "https://") && !c.CookieSecure {
+		return errors.New(
+			"SLIILS_COOKIE_SECURE=true is required when SLIILS_PUBLIC_BASE_URL is https (refresh cookie would ride over http hops otherwise)",
+		)
+	}
+	if !strings.HasPrefix(c.PublicBaseURL, "https://") && !c.AllowDevOrigins {
+		return errors.New(
+			"SLIILS_PUBLIC_BASE_URL must use https in production; set SLIILS_ALLOW_DEV_ORIGINS=true only for local development",
+		)
 	}
 	if c.ResendAPIKey == "" {
 		return errors.New("SLIILS_RESEND_API_KEY is required (email is required for signup/magic-link)")

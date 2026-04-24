@@ -36,6 +36,7 @@ var channelNamePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,79}$`)
 func (s *Server) mountChannels(api *echo.Group) {
 	g := api.Group("")
 	g.Use(s.requireAuth())
+	g.Use(s.requireTenantWriteLimit())
 	g.POST("/workspaces/:slug/channels", s.createChannel)
 }
 

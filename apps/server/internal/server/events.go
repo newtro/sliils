@@ -120,6 +120,7 @@ type rsvpRequest struct {
 func (s *Server) mountEvents(api *echo.Group) {
 	g := api.Group("")
 	g.Use(s.requireAuth())
+	g.Use(s.requireTenantWriteLimit())
 
 	g.GET("/workspaces/:slug/events", s.listEventsRange)
 	g.POST("/workspaces/:slug/events", s.createEvent)

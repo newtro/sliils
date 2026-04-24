@@ -6,7 +6,9 @@ import (
 	_ "embed"
 	"fmt"
 	"log/slog"
+	"net"
 	"net/http"
+	"strings"
 
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/labstack/echo/v4"
@@ -110,12 +112,37 @@ func New(cfg *config.Config, logger *slog.Logger, pool *db.Pool, opts Options) (
 	e.HidePort = true
 	e.HTTPErrorHandler = problem.ErrorHandler(logger)
 
+	// Resolve the client IP from a trusted proxy's X-Forwarded-For header
+	// only if SLIILS_TRUSTED_PROXIES lists the proxy's CIDR. Otherwise
+	// use the direct socket address so attacker-supplied headers can't
+	// forge IPs into rate-limit keys or the audit log.
+	if trusted := parseTrustedProxies(cfg.TrustedProxies); len(trusted) > 0 {
+		opts := make([]echo.TrustOption, 0, len(trusted))
+		for _, cidr := range trusted {
+			opts = append(opts, echo.TrustIPRange(cidr))
+		}
+		e.IPExtractor = echo.ExtractIPFromXFFHeader(opts...)
+	} else {
+		e.IPExtractor = echo.ExtractIPDirect()
+	}
+
 	e.Use(middleware.Recover())
 	e.Use(middleware.RequestID())
 	e.Use(slogRequestLogger(logger))
-	e.Use(middleware.Secure())
+	// HSTS + CSP: HSTSMaxAge locks browsers to https for a year (no-op on
+	// http, harmless to send); CSP pins script/style/connect to same-origin
+	// so a stored XSS can't phone home or embed a foreign script tag.
+	e.Use(middleware.SecureWithConfig(middleware.SecureConfig{
+		XSSProtection:         "1; mode=block",
+		ContentTypeNosniff:    "nosniff",
+		XFrameOptions:         "SAMEORIGIN",
+		HSTSMaxAge:            31536000,
+		HSTSExcludeSubdomains: false,
+		ContentSecurityPolicy: "default-src 'self'; img-src 'self' data: blob: https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' data: https://fonts.gstatic.com; script-src 'self'; connect-src 'self' wss: https:; frame-ancestors 'self'; base-uri 'self'; form-action 'self'",
+		ReferrerPolicy:        "strict-origin-when-cross-origin",
+	}))
 	e.Use(middleware.CORSWithConfig(middleware.CORSConfig{
-		AllowOrigins:     []string{cfg.PublicBaseURL, "http://localhost:5173", "http://localhost:1420"},
+		AllowOrigins:     allowedOrigins(cfg),
 		AllowMethods:     []string{http.MethodGet, http.MethodPost, http.MethodPatch, http.MethodDelete, http.MethodOptions},
 		AllowHeaders:     []string{echo.HeaderOrigin, echo.HeaderContentType, echo.HeaderAuthorization, echo.HeaderAccept, "Idempotency-Key"},
 		AllowCredentials: true,
@@ -309,7 +336,25 @@ func (s *Server) resolveEmailSenderForWorkspace(ctx context.Context, workspaceID
 				s.logger,
 			), nil
 		}
-		// Install-level override: in-DB settings beat env.
+	}
+	return s.resolveInstallEmailSender(ctx), nil
+}
+
+// resolveInstallEmailSender returns the sender used for install-wide flows
+// (magic-link, password-reset, verify-email). Resolution order:
+//
+//  1. install_settings (email.resend_api_key + email.from_address) —
+//     the DB-managed value wins once an admin has set one via the
+//     wizard or Admin → Integrations. This is the key fix that makes
+//     post-boot email configuration actually take effect: without it,
+//     s.email was frozen at server startup and stayed nil forever if
+//     the operator skipped email at first-run.
+//  2. The env-time s.email sender (set up in server.New from .env).
+//
+// Returns nil when nothing is configured so callers can surface
+// "email not configured" rather than crashing.
+func (s *Server) resolveInstallEmailSender(ctx context.Context) email.Sender {
+	if s.installSvc != nil {
 		apiKey, _ := s.installSvc.Get(ctx, install.KeyInstallResendAPIKey)
 		fromAddr, _ := s.installSvc.Get(ctx, install.KeyInstallEmailFrom)
 		fromName, _ := s.installSvc.Get(ctx, install.KeyInstallEmailFromName)
@@ -319,10 +364,10 @@ func (s *Server) resolveEmailSenderForWorkspace(ctx context.Context, workspaceID
 				firstNonEmpty(fromName, s.cfg.EmailFromName),
 				fromAddr,
 				s.logger,
-			), nil
+			)
 		}
 	}
-	return s.email, nil
+	return s.email
 }
 
 func firstNonEmpty(a, b string) string {
@@ -330,6 +375,38 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+// allowedOrigins returns the CORS allow-list. PublicBaseURL is always
+// included; dev-only origins are added when SLIILS_ALLOW_DEV_ORIGINS=true
+// so local vite / Tauri can talk to a dev server without poking a hole
+// into a production install.
+func allowedOrigins(cfg *config.Config) []string {
+	out := []string{cfg.PublicBaseURL}
+	if cfg.AllowDevOrigins {
+		out = append(out, "http://localhost:5173", "http://localhost:1420")
+	}
+	return out
+}
+
+// parseTrustedProxies parses a comma-separated CIDR list. Any malformed
+// entry is silently dropped — operators who mis-type a CIDR get the
+// "no trusted proxies" behaviour (safe default) rather than a crash.
+func parseTrustedProxies(raw string) []*net.IPNet {
+	if raw == "" {
+		return nil
+	}
+	var out []*net.IPNet
+	for _, part := range strings.Split(raw, ",") {
+		p := strings.TrimSpace(part)
+		if p == "" {
+			continue
+		}
+		if _, ipnet, err := net.ParseCIDR(p); err == nil {
+			out = append(out, ipnet)
+		}
+	}
+	return out
 }
 
 func slogRequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
