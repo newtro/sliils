@@ -26,10 +26,12 @@ import (
 	"github.com/sliils/sliils/apps/server/internal/calsync"
 	"github.com/sliils/sliils/apps/server/internal/config"
 	"github.com/sliils/sliils/apps/server/internal/db"
+	"github.com/sliils/sliils/apps/server/internal/install"
 	"github.com/sliils/sliils/apps/server/internal/logging"
 	"github.com/sliils/sliils/apps/server/internal/pages"
 	"github.com/sliils/sliils/apps/server/internal/push"
 	"github.com/sliils/sliils/apps/server/internal/search"
+	"github.com/sliils/sliils/apps/server/internal/secretbox"
 	"github.com/sliils/sliils/apps/server/internal/server"
 	"github.com/sliils/sliils/apps/server/internal/workers"
 	"github.com/sliils/sliils/apps/server/migrations"
@@ -120,11 +122,10 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 	var runner *workers.Runner
 
 	// Owner pool is opened whenever any subsystem that needs to bypass
-	// RLS is enabled: search drain, calendar sync workers, or pages
-	// (snapshot worker + comment-by-id lookup). River migrations run
-	// against the owner pool too since River tables live there.
-	needsOwnerPool := cfg.SearchEnabled || cfg.PagesEnabled || cfg.ExternalCalendarsEnabled || cfg.PushEnabled
-	if needsOwnerPool {
+	// Always open the owner pool. install_settings (no RLS) + the
+	// boot-time env seeding + River migrations all need it; the tenant
+	// pool can't reach them.
+	{
 		op, err := db.OpenOwner(ctx, cfg.DatabaseURL, logger)
 		if err != nil {
 			return fmt.Errorf("open owner pool: %w", err)
@@ -134,6 +135,56 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 
 		if err := workers.RunMigrations(ctx, ownerPool, logger); err != nil {
 			return fmt.Errorf("river migrate: %w", err)
+		}
+	}
+
+	// ---- install settings + env seeding -------------------------------
+	//
+	// `install` lets workspace owners edit email / signup policy from
+	// the admin UI. At v1 we reuse the calendar encryption key as the
+	// settings key when no dedicated one is configured — both cover the
+	// same threat model (API credentials at rest).
+	var settingsBox *secretbox.Box
+	settingsKey := getenvOr("SLIILS_SETTINGS_ENCRYPTION_KEY", cfg.CalendarEncryptionKey)
+	if settingsKey != "" {
+		raw, err := secretbox.MustParseKey(settingsKey)
+		if err != nil {
+			return fmt.Errorf("settings encryption key: %w", err)
+		}
+		box, err := secretbox.New(raw)
+		if err != nil {
+			return fmt.Errorf("settings box: %w", err)
+		}
+		settingsBox = box
+	} else {
+		logger.Warn("no SLIILS_SETTINGS_ENCRYPTION_KEY (or SLIILS_CALENDAR_ENCRYPTION_KEY); workspace email API keys will NOT be accepted until one is set")
+	}
+	installSvc := install.NewService(ownerPool, settingsBox)
+
+	// Seed env values into install_settings once. SeedIfAbsent makes
+	// each call a no-op after the first boot — admins can edit via
+	// the UI without getting clobbered on restart.
+	if err := installSvc.Seed(ctx, install.KeyInstallEmailProvider, "resend", false); err != nil {
+		logger.Warn("seed install provider", slog.String("error", err.Error()))
+	}
+	if err := installSvc.Seed(ctx, install.KeyInstallResendAPIKey, cfg.ResendAPIKey, true); err != nil {
+		logger.Warn("seed install resend api key", slog.String("error", err.Error()))
+	}
+	if err := installSvc.Seed(ctx, install.KeyInstallEmailFrom, cfg.EmailFromEmail, false); err != nil {
+		logger.Warn("seed install email from", slog.String("error", err.Error()))
+	}
+	if err := installSvc.Seed(ctx, install.KeyInstallEmailFromName, cfg.EmailFromName, false); err != nil {
+		logger.Warn("seed install email from name", slog.String("error", err.Error()))
+	}
+	// Default signup policy = invite_only until the admin opts in.
+	if err := installSvc.Seed(ctx, install.KeySignupMode, install.SignupInviteOnly, false); err != nil {
+		logger.Warn("seed signup mode", slog.String("error", err.Error()))
+	}
+	// Mark setup-completed when env already has everything; keeps
+	// upgrade-from-older paths from re-showing the wizard.
+	if cfg.ResendAPIKey != "" && cfg.EmailFromEmail != "" {
+		if err := installSvc.Seed(ctx, install.KeyInstallSetupCompleted, "true", false); err != nil {
+			logger.Warn("seed setup completed", slog.String("error", err.Error()))
 		}
 	}
 
@@ -275,6 +326,7 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 		CalSync:       calSync,
 		YSweet:        ySweet,
 		Push:          pushSvc,
+		Install:       installSvc,
 	})
 	if err != nil {
 		return fmt.Errorf("build server: %w", err)
@@ -353,6 +405,16 @@ func runServer(cfg *config.Config, logger *slog.Logger) error {
 // loadDotEnv walks up from the current working directory looking for a .env
 // file and loads it. Env vars already set in the real environment take
 // precedence — `.env` only fills in the gaps.
+// getenvOr returns the env var when set (non-empty), otherwise the
+// fallback. Kept inline so main.go doesn't import config just for this.
+func getenvOr(key, fallback string) string {
+	v := os.Getenv(key)
+	if v == "" {
+		return fallback
+	}
+	return v
+}
+
 func loadDotEnv() {
 	cwd, err := os.Getwd()
 	if err != nil {

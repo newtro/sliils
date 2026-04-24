@@ -18,6 +18,7 @@ import (
 	"github.com/sliils/sliils/apps/server/internal/auth"
 	"github.com/sliils/sliils/apps/server/internal/db/sqlcgen"
 	"github.com/sliils/sliils/apps/server/internal/email"
+	"github.com/sliils/sliils/apps/server/internal/install"
 	"github.com/sliils/sliils/apps/server/internal/problem"
 	"github.com/sliils/sliils/apps/server/internal/ratelimit"
 )
@@ -44,6 +45,9 @@ type signupRequest struct {
 	Email       string `json:"email"`
 	Password    string `json:"password"`
 	DisplayName string `json:"display_name"`
+	// InviteToken is required when the install is in invite-only mode.
+	// Accepted verbatim; the invite handler consumes it post-signup.
+	InviteToken string `json:"invite_token,omitempty"`
 }
 
 type loginRequest struct {
@@ -91,6 +95,24 @@ func (s *Server) authSignup(c echo.Context) error {
 	req.Email = strings.ToLower(strings.TrimSpace(req.Email))
 	if _, err := mail.ParseAddress(req.Email); err != nil {
 		return problem.BadRequest("invalid email address")
+	}
+
+	// Signup gate: respect install_settings.signup_mode. Invite-only
+	// installs require a valid invite token whose email matches the
+	// one the user is registering with (or blank = shareable link).
+	if s.installSvc != nil {
+		mode := s.installSvc.SignupMode(c.Request().Context())
+		if mode == install.SignupInviteOnly {
+			if req.InviteToken == "" {
+				return problem.Forbidden("signup requires an invitation")
+			}
+			// Validate the token via the existing previewInvite flow —
+			// that already checks expiry/revocation/accepted state and
+			// email-match semantics.
+			if err := s.validateInviteTokenForSignup(c.Request().Context(), req.InviteToken, req.Email); err != nil {
+				return err
+			}
+		}
 	}
 	if err := validatePassword(req.Password); err != nil {
 		return problem.BadRequest(err.Error())

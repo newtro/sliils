@@ -21,6 +21,7 @@ import (
 	"github.com/sliils/sliils/apps/server/internal/db/sqlcgen"
 	"github.com/sliils/sliils/apps/server/internal/email"
 	"github.com/sliils/sliils/apps/server/internal/health"
+	"github.com/sliils/sliils/apps/server/internal/install"
 	"github.com/sliils/sliils/apps/server/internal/pages"
 	"github.com/sliils/sliils/apps/server/internal/problem"
 	"github.com/sliils/sliils/apps/server/internal/push"
@@ -60,6 +61,7 @@ type Server struct {
 	collabora *wopi.DiscoveryClient // nil when SLIILS_COLLABORA_URL is empty
 	wopiTokens *wopi.TokenIssuer // always wired when Pages are enabled (WOPI + non-Collabora uses share the issuer)
 	push      *push.Service     // nil when push is disabled
+	installSvc *install.Service // install_settings + workspace_email_settings
 	enqueueCalPush CalendarPushEnqueueFunc // nil when no worker runner is wired
 	enqueuePush    PushEnqueueFunc         // nil when no worker runner is wired
 }
@@ -99,6 +101,7 @@ type Options struct {
 	CalSync       *calsync.Service // nil = external calendars disabled
 	YSweet        *pages.Client   // nil = pages are disabled (create/auth endpoints 503)
 	Push          *push.Service   // nil = push is disabled
+	Install       *install.Service // install_settings + per-workspace email config
 }
 
 func New(cfg *config.Config, logger *slog.Logger, pool *db.Pool, opts Options) (*Server, error) {
@@ -205,6 +208,9 @@ func New(cfg *config.Config, logger *slog.Logger, pool *db.Pool, opts Options) (
 	if opts.Push != nil {
 		s.push = opts.Push
 	}
+	if opts.Install != nil {
+		s.installSvc = opts.Install
+	}
 
 	s.routes()
 	return s, nil
@@ -241,6 +247,7 @@ func (s *Server) routes() {
 	s.mountBotAPI(api)
 	s.mountSlashCommands(api)
 	s.mountAdmin(api)
+	s.mountAdminIntegrations(api)
 	s.mountChannels(api)
 }
 
@@ -274,6 +281,54 @@ func (s *Server) Health() *health.Registry {
 // channels as the HTTP handlers.
 func (s *Server) Broker() *realtime.Broker {
 	return s.broker
+}
+
+// resolveEmailSenderForWorkspace picks the right outbound email sender
+// for a workspace-originated email (invites today; workspace
+// notifications later). Resolution order:
+//
+//  1. workspace_email_settings row — tenant-configured Resend API key
+//     + from address. This is the normal case for multi-tenant installs
+//     where each workspace sends as their own domain.
+//  2. install_settings (email.resend_api_key + email.from_address) —
+//     operator-level fallback for tenants that haven't configured their
+//     own yet.
+//  3. The env-time s.email sender (set up in server.New from .env).
+//
+// Returns (nil, nil) when no provider is available — the caller
+// should report "email not configured" rather than silently dropping.
+func (s *Server) resolveEmailSenderForWorkspace(ctx context.Context, workspaceID int64) (email.Sender, error) {
+	if s.installSvc != nil {
+		cfg, err := s.installSvc.GetWorkspaceEmail(ctx, workspaceID)
+		if err == nil && cfg.APIKeyIsSet && cfg.ResolvedAPIKey != "" && cfg.FromAddress != "" {
+			return email.NewResendSender(
+				cfg.ResolvedAPIKey,
+				firstNonEmpty(cfg.FromName, s.cfg.EmailFromName),
+				cfg.FromAddress,
+				s.logger,
+			), nil
+		}
+		// Install-level override: in-DB settings beat env.
+		apiKey, _ := s.installSvc.Get(ctx, install.KeyInstallResendAPIKey)
+		fromAddr, _ := s.installSvc.Get(ctx, install.KeyInstallEmailFrom)
+		fromName, _ := s.installSvc.Get(ctx, install.KeyInstallEmailFromName)
+		if apiKey != "" && fromAddr != "" {
+			return email.NewResendSender(
+				apiKey,
+				firstNonEmpty(fromName, s.cfg.EmailFromName),
+				fromAddr,
+				s.logger,
+			), nil
+		}
+	}
+	return s.email, nil
+}
+
+func firstNonEmpty(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func slogRequestLogger(logger *slog.Logger) echo.MiddlewareFunc {

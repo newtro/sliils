@@ -25,7 +25,7 @@ export interface AuthContextValue {
   loading: boolean;
   refreshMe: () => Promise<User | null>;
   loginWithPassword: (email: string, password: string) => Promise<User>;
-  signup: (email: string, password: string, displayName: string) => Promise<User>;
+  signup: (email: string, password: string, displayName: string, inviteToken?: string) => Promise<User>;
   requestMagicLink: (email: string) => Promise<void>;
   consumeMagicLink: (token: string) => Promise<User>;
   requestPasswordReset: (email: string) => Promise<void>;
@@ -112,10 +112,21 @@ export function AuthProvider({ children }: { children: ReactNode }): ReactElemen
   );
 
   const signup = useCallback(
-    async (email: string, password: string, displayName: string): Promise<User> => {
+    async (
+      email: string,
+      password: string,
+      displayName: string,
+      inviteToken?: string,
+    ): Promise<User> => {
+      const body: Record<string, string> = {
+        email,
+        password,
+        display_name: displayName,
+      };
+      if (inviteToken) body.invite_token = inviteToken;
       const resp = await apiFetch<SessionResponse>('/auth/signup', {
         method: 'POST',
-        body: { email, password, display_name: displayName },
+        body,
         skipRefresh: true,
       });
       return applySession(resp);

@@ -178,14 +178,18 @@ func (s *Server) createInvite(c echo.Context) error {
 	// UI can surface a real status instead of a false "sent" claim.
 	var emailStatus, emailError string
 	if req.Email != "" {
+		sender, err := s.resolveEmailSenderForWorkspace(c.Request().Context(), ws.ID)
 		switch {
-		case s.email == nil:
+		case err != nil:
+			emailStatus = "failed"
+			emailError = err.Error()
+		case sender == nil:
 			emailStatus = "skipped"
-			emailError = "email sender is not configured on this server"
+			emailError = "no email sender is configured for this workspace; add a Resend API key in Admin → Integrations, or set install defaults"
 		default:
 			sendCtx, cancel := context.WithTimeout(c.Request().Context(), 10*time.Second)
 			msg := email.WorkspaceInvite(req.Email, ws.Name, user.DisplayName, acceptURL)
-			if err := s.email.Send(sendCtx, msg); err != nil {
+			if err := sender.Send(sendCtx, msg); err != nil {
 				emailStatus = "failed"
 				emailError = err.Error()
 				s.logger.Warn("invite email send failed",
@@ -306,6 +310,41 @@ func (s *Server) revokeInvite(c echo.Context) error {
 // visitor has no session. Lookup runs on the owner pool so RLS doesn't
 // hide the row. The response intentionally leaks only what the email
 // already revealed (workspace name, invited email) plus status flags.
+// validateInviteTokenForSignup is called during /auth/signup in
+// invite-only installs. Reads the token without consuming it (the
+// actual accept/consume happens after signup when the user hits
+// /invites/:token/accept with their new session).
+func (s *Server) validateInviteTokenForSignup(ctx context.Context, token, signupEmail string) error {
+	if s.ownerPool == nil {
+		return problem.Internal("invite validation requires the owner pool")
+	}
+	q := sqlcgen.New(s.ownerPool)
+	row, err := q.GetInviteByToken(ctx, token)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return problem.Forbidden("invitation is not valid")
+		}
+		return problem.Internal("validate invite: " + err.Error())
+	}
+	if row.RevokedAt.Valid {
+		return problem.Forbidden("invitation has been revoked")
+	}
+	if row.AcceptedAt.Valid {
+		return problem.Forbidden("invitation has already been used")
+	}
+	if row.ExpiresAt.Valid && time.Now().After(row.ExpiresAt.Time) {
+		return problem.Forbidden("invitation has expired")
+	}
+	// Email-targeted invites only let that specific email sign up.
+	// Shareable links (email NULL) let anyone through.
+	if row.Email != nil && *row.Email != "" {
+		if !strings.EqualFold(*row.Email, signupEmail) {
+			return problem.Forbidden("this invitation is for a different email address")
+		}
+	}
+	return nil
+}
+
 func (s *Server) previewInvite(c echo.Context) error {
 	token := c.Param("token")
 	if token == "" {

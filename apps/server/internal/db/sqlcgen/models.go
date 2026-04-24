@@ -182,6 +182,14 @@ type File struct {
 	DeletedAt      pgtype.Timestamptz
 }
 
+type InstallSetting struct {
+	Key       string
+	Value     string
+	Encrypted bool
+	UpdatedAt pgtype.Timestamptz
+	UpdatedBy *int64
+}
+
 type Meeting struct {
 	ID               int64
 	WorkspaceID      int64
@@ -400,6 +408,16 @@ type Workspace struct {
 	CreatedAt     pgtype.Timestamptz
 	UpdatedAt     pgtype.Timestamptz
 	ArchivedAt    pgtype.Timestamptz
+}
+
+type WorkspaceEmailSetting struct {
+	WorkspaceID     int64
+	Provider        string
+	ResendApiKeyEnc string
+	FromAddress     string
+	FromName        string
+	UpdatedAt       pgtype.Timestamptz
+	UpdatedBy       *int64
 }
 
 type WorkspaceInvite struct {

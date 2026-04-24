@@ -106,6 +106,7 @@ type Querier interface {
 	DeleteOutgoingWebhook(ctx context.Context, id int64) error
 	DeletePageComment(ctx context.Context, id int64) error
 	DeleteSlashCommand(ctx context.Context, id int64) error
+	DeleteWorkspaceEmailSettings(ctx context.Context, workspaceID int64) error
 	// Called by the push worker when the endpoint returns 404/410.
 	DisableDevice(ctx context.Context, arg DisableDeviceParams) error
 	DisconnectExternalCalendar(ctx context.Context, arg DisconnectExternalCalendarParams) error
@@ -159,6 +160,8 @@ type Querier interface {
 	// NOTE: called unauthenticated from a public URL. Uses the owner pool in
 	// the handler so RLS doesn't hide the row.
 	GetIncomingWebhookByToken(ctx context.Context, token string) (WebhooksIncoming, error)
+	// Install-wide settings (single-tenant key/value).
+	GetInstallSetting(ctx context.Context, key string) (InstallSetting, error)
 	GetInstallation(ctx context.Context, arg GetInstallationParams) (AppInstallation, error)
 	GetInstallationByID(ctx context.Context, id int64) (AppInstallation, error)
 	// Token lookup. Runs on the OWNER pool (RLS bypassed) so the accept path
@@ -194,6 +197,8 @@ type Querier interface {
 	GetUserDNDState(ctx context.Context, id int64) (GetUserDNDStateRow, error)
 	GetWorkspaceByID(ctx context.Context, id int64) (Workspace, error)
 	GetWorkspaceBySlug(ctx context.Context, slug string) (Workspace, error)
+	// Per-workspace email provider config.
+	GetWorkspaceEmailSettings(ctx context.Context, workspaceID int64) (WorkspaceEmailSetting, error)
 	IncrementFailedLogins(ctx context.Context, arg IncrementFailedLoginsParams) (IncrementFailedLoginsRow, error)
 	InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) error
 	// Owner-pool path for the accept. Bypasses the workspace_memberships
@@ -246,6 +251,7 @@ type Querier interface {
 	ListEventsInRange(ctx context.Context, arg ListEventsInRangeParams) ([]ListEventsInRangeRow, error)
 	ListExternalCalendarsForUser(ctx context.Context, userID int64) ([]ExternalCalendar, error)
 	ListIncomingWebhooks(ctx context.Context, workspaceID int64) ([]WebhooksIncoming, error)
+	ListInstallSettings(ctx context.Context) ([]InstallSetting, error)
 	ListInstallationsForWorkspace(ctx context.Context, workspaceID int64) ([]ListInstallationsForWorkspaceRow, error)
 	// ---- bootstrap / full reindex --------------------------------------------
 	// Streaming-style pagination for the initial / full reindex path. Returns
@@ -342,6 +348,10 @@ type Querier interface {
 	RevokeSession(ctx context.Context, id int64) error
 	RotateAppSecret(ctx context.Context, arg RotateAppSecretParams) error
 	RotateSessionRefresh(ctx context.Context, arg RotateSessionRefreshParams) error
+	// First-boot seeding: write the value only if the key isn't already
+	// present. Lets us pull env defaults into the DB once without clobbering
+	// values an admin has already edited through the UI.
+	SeedInstallSettingIfAbsent(ctx context.Context, arg SeedInstallSettingIfAbsentParams) error
 	// Stamp the external id + etag after a successful push or on import.
 	SetEventExternalRef(ctx context.Context, arg SetEventExternalRefParams) error
 	SetInstallationBot(ctx context.Context, arg SetInstallationBotParams) error
@@ -406,12 +416,14 @@ type Querier interface {
 	// reset sync_token so the next pull starts from scratch (otherwise a
 	// stale token tied to a deleted Google connection will 400).
 	UpsertExternalCalendar(ctx context.Context, arg UpsertExternalCalendarParams) (ExternalCalendar, error)
+	UpsertInstallSetting(ctx context.Context, arg UpsertInstallSettingParams) error
 	// ---- event_attendees ---------------------------------------------------
 	// Idempotent attendee add for an internal user. If they're already on
 	// the invite list, we keep their existing RSVP. If this is an import
 	// from an external calendar, the caller passes rsvp='pending' and the
 	// next sync tick will reconcile.
 	UpsertInternalAttendee(ctx context.Context, arg UpsertInternalAttendeeParams) (EventAttendee, error)
+	UpsertWorkspaceEmailSettings(ctx context.Context, arg UpsertWorkspaceEmailSettingsParams) (WorkspaceEmailSetting, error)
 }
 
 var _ Querier = (*Queries)(nil)
