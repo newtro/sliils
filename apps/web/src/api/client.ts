@@ -52,7 +52,15 @@ async function raw(path: string, opts: FetchOptions = {}): Promise<Response> {
   let body: BodyInit | undefined;
   if (opts.body !== undefined && opts.body !== null) {
     headers['Content-Type'] = 'application/json';
-    body = JSON.stringify(opts.body);
+    // Accept both pre-stringified callers (body: JSON.stringify(x))
+    // and object callers (body: { ... }). Double-stringifying causes
+    // the server to receive a JSON-escaped string, which fails to
+    // bind into the request struct and returns a 400. This branch
+    // passed-through strings so we never re-encode them.
+    body =
+      typeof opts.body === 'string'
+        ? opts.body
+        : JSON.stringify(opts.body);
   }
 
   return fetch(`/api/v1${path}`, {
@@ -65,7 +73,16 @@ async function raw(path: string, opts: FetchOptions = {}): Promise<Response> {
 
 async function parseOrThrow<T>(res: Response): Promise<T> {
   if (res.ok) {
-    return (await res.json()) as T;
+    // 204 No Content responses have an empty body — calling .json() on
+    // them throws "Unexpected end of JSON input". Handlers that use
+    // `apiFetch<void>` (PATCH /dnd, DELETE /devices, role changes,
+    // etc.) expect undefined back; return it cleanly.
+    if (res.status === 204 || res.headers.get('Content-Length') === '0') {
+      return undefined as T;
+    }
+    const text = await res.text();
+    if (!text) return undefined as T;
+    return JSON.parse(text) as T;
   }
   let problem: ProblemDetails;
   try {
