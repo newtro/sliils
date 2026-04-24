@@ -25,8 +25,20 @@ Every team of eight pays $200+ / month for Slack, Teams, or Google Chat and gets
 
 - **Own the stack.** One binary, one Postgres, your box. Backup is `pg_dump`.
 - **No per-seat tax.** Add a hundred users. Price stays the same.
-- **Teams-class feature surface, Slack-class UX.** Channels, threads, DMs, search, calls, calendar, pages, integrations — all there, all self-hosted.
+- **Teams-class feature surface, Slack-class UX.** All the capabilities below in one self-hosted bundle.
 - **Multi-tenant from day one.** One install runs many workspaces with enforced `FORCE ROW LEVEL SECURITY` tenant isolation.
+
+## What's in the box
+
+- **Messaging** — channels, threads, direct messages, group DMs, reactions, mentions, typing indicators, presence, per-channel mute
+- **Voice + video calls** — 1:1 DM calls and channel meetings powered by a self-hosted LiveKit SFU, with an incoming-call banner, background blur, and a post-call summary message. Scheduled meetings from the calendar bridge straight into the same room.
+- **Calendar** — RFC 5545 recurring events (RRULE), RSVPs, reminders 4-6 min before start, iCal feed URL for Apple/Outlook subscription, bidirectional Google Calendar sync
+- **Files** — multipart upload with EXIF strip, SHA-256 per-workspace dedupe, drag-drop attachments, pluggable storage driver (local at v1, S3/SeaweedFS interface ready)
+- **Office docs + collaborative pages** — `.docx` / `.xlsx` / `.pptx` editing via Collabora Online (WOPI); native collaborative pages backed by Yjs + Y-Sweet with TipTap, version history, and inline comments
+- **Search** — Meilisearch-backed, ⌘K global overlay, `from:@user in:#chan has:file` operators, tenant-token HMAC ACL so private channels never leak
+- **Push notifications** — VAPID web push with a service worker, Signal-style opaque payloads (no message body on the wire to APNs/FCM), per-user DND + quiet-hours + per-channel mute
+- **Apps platform** — OAuth 2.0 + PKCE installable apps, bot users, Slack-shaped `chat.postMessage` + `auth.test`, Block-Kit JSON, incoming + outgoing webhooks, slash commands — existing Slack SDKs work with a base-URL swap
+- **Admin dashboard** — members + role management, retention policies, audit log viewer, workspace branding, one-click GDPR per-user export + full-workspace ZIP export
 
 ## Status
 

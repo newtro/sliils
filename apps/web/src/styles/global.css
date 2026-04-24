@@ -1381,6 +1381,38 @@ button {
   font-weight: 500;
 }
 
+/* Workspace-level nav items (Pages, Calendar, Admin). Same visual
+ * weight as channel entries but without the `#` glyph. */
+.sl-ws-navlist {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.sl-ws-navitem {
+  width: 100%;
+  background: transparent;
+  border: none;
+  text-align: left;
+  font-family: inherit;
+  font-size: var(--fs-base);
+  cursor: pointer;
+  color: var(--text-muted);
+  padding: 6px 12px;
+  border-radius: var(--r-md);
+  transition:
+    background var(--t-fast) var(--ease),
+    color var(--t-fast) var(--ease);
+}
+.sl-ws-navitem:hover {
+  background: var(--surface-hover);
+  color: var(--text);
+}
+.sl-ws-navitem.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
 /* Main content */
 .sl-ws-main {
   display: flex;

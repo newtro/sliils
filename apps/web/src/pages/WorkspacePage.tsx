@@ -18,7 +18,6 @@ import { CallSurface } from '../components/CallSurface';
 import { ChannelView } from '../components/ChannelView';
 import { IncomingCallBanner } from '../components/IncomingCallBanner';
 import type { IncomingCall } from '../components/IncomingCallBanner';
-import { InviteDialog } from '../components/InviteDialog';
 import { SearchOverlay } from '../components/SearchOverlay';
 import { ThreadPanel } from '../components/ThreadPanel';
 import { WorkspacePrefs } from '../components/WorkspacePrefs';
@@ -35,7 +34,6 @@ export function WorkspacePage(): ReactElement {
   const [openThreadID, setOpenThreadID] = useState<number | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
-  const [inviteOpen, setInviteOpen] = useState(false);
   const [prefsOpen, setPrefsOpen] = useState(false);
   const [pendingScrollMessageID, setPendingScrollMessageID] = useState<number | null>(null);
 
@@ -395,36 +393,44 @@ export function WorkspacePage(): ReactElement {
               onClose={() => setPrefsOpen(false)}
             />
           )}
-          {current && (
-            <div className="sl-ws-pane-action-row">
-              <button
-                type="button"
-                className="sl-ws-pane-action"
-                onClick={() => navigate(`/w/${current.workspace.slug}/calendar`)}
-                title="Open calendar"
-              >
-                📅 Calendar
-              </button>
-              <button
-                type="button"
-                className="sl-ws-pane-action"
-                onClick={() => navigate(`/w/${current.workspace.slug}/pages`)}
-                title="Open pages"
-              >
-                📄 Pages
-              </button>
-              {(current.role === 'owner' || current.role === 'admin') && (
+        </header>
+
+        {current && (
+          <section className="sl-ws-section">
+            <div className="sl-ws-section-label">Workspace</div>
+            <ul className="sl-ws-navlist">
+              <li>
                 <button
                   type="button"
-                  className="sl-ws-pane-action"
-                  onClick={() => setInviteOpen(true)}
+                  className="sl-ws-navitem"
+                  onClick={() => navigate(`/w/${current.workspace.slug}/pages`)}
                 >
-                  + Invite
+                  Pages
                 </button>
+              </li>
+              <li>
+                <button
+                  type="button"
+                  className="sl-ws-navitem"
+                  onClick={() => navigate(`/w/${current.workspace.slug}/calendar`)}
+                >
+                  Calendar
+                </button>
+              </li>
+              {(current.role === 'owner' || current.role === 'admin') && (
+                <li>
+                  <button
+                    type="button"
+                    className="sl-ws-navitem"
+                    onClick={() => navigate(`/w/${current.workspace.slug}/admin`)}
+                  >
+                    Admin
+                  </button>
+                </li>
               )}
-            </div>
-          )}
-        </header>
+            </ul>
+          </section>
+        )}
 
         <section className="sl-ws-section">
           <div className="sl-ws-section-label">Channels</div>
@@ -623,16 +629,6 @@ export function WorkspacePage(): ReactElement {
           open={searchOpen}
           onClose={() => setSearchOpen(false)}
           onNavigate={onSearchNavigate}
-        />
-      )}
-
-      {current && (
-        <InviteDialog
-          workspaceSlug={current.workspace.slug}
-          workspaceName={current.workspace.name}
-          myRole={current.role}
-          open={inviteOpen}
-          onClose={() => setInviteOpen(false)}
         />
       )}
 

@@ -13,6 +13,7 @@ import { WorkspacePage } from '../pages/WorkspacePage';
 import { InvitePage } from '../pages/InvitePage';
 import { CalendarPage } from '../pages/CalendarPage';
 import { PagesPage } from '../pages/PagesPage';
+import { AdminPage } from '../pages/AdminPage';
 
 export const routes: RouteObject[] = [
   {
@@ -35,6 +36,7 @@ export const routes: RouteObject[] = [
       { path: 'w/:slug/calendar', Component: CalendarPage },
       { path: 'w/:slug/pages', Component: PagesPage },
       { path: 'w/:slug/pages/:pageId', Component: PagesPage },
+      { path: 'w/:slug/admin', Component: AdminPage },
       { path: 'invite/:token', Component: InvitePage },
     ],
   },
