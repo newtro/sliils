@@ -211,6 +211,10 @@ type Querier interface {
 	// against files so the client gets everything it needs to render a preview.
 	ListAttachmentsForMessages(ctx context.Context, dollar_1 []int64) ([]ListAttachmentsForMessagesRow, error)
 	ListAttendeesForEvent(ctx context.Context, eventID int64) ([]ListAttendeesForEventRow, error)
+	// Admin dashboard feed. Joins the actor's display_name for a readable
+	// "who did what" view. ORDER BY id DESC is stable even when two events
+	// share the same created_at millisecond.
+	ListAuditLogForWorkspace(ctx context.Context, arg ListAuditLogForWorkspaceParams) ([]ListAuditLogForWorkspaceRow, error)
 	// Returns every user id with an active channel membership. Used to bake
 	// `channel_member_ids` into Meilisearch documents for private channels / DMs.
 	ListChannelMemberIDs(ctx context.Context, channelID int64) ([]int64, error)
@@ -294,6 +298,9 @@ type Querier interface {
 	// the switcher can render status badges + per-workspace mute indicators
 	// without a second round trip.
 	ListWorkspacesForUser(ctx context.Context, userID int64) ([]ListWorkspacesForUserRow, error)
+	// Fed into the retention-sweep worker. Returns every workspace whose
+	// admins have opted into automatic message purging.
+	ListWorkspacesWithRetention(ctx context.Context) ([]ListWorkspacesWithRetentionRow, error)
 	// Used to validate that a list of <@N> mention targets are actually in
 	// the current workspace before persisting mention rows.
 	LookupWorkspaceMembersByIDs(ctx context.Context, arg LookupWorkspaceMembersByIDsParams) ([]LookupWorkspaceMembersByIDsRow, error)
@@ -313,6 +320,9 @@ type Querier interface {
 	// Housekeeping: drop processed rows older than the retention window. Run
 	// periodically by the worker.
 	PruneProcessedSearchOutbox(ctx context.Context, retain string) error
+	// Soft-delete messages older than the retention window. Messages are
+	// partitioned; the date bound is essential for partition pruning.
+	PurgeOldMessages(ctx context.Context, arg PurgeOldMessagesParams) error
 	// Push notification devices (M11).
 	// Idempotent by (user_id, endpoint): re-registering the same endpoint
 	// updates its keys + label and clears disabled state. That matches the
@@ -384,6 +394,11 @@ type Querier interface {
 	UpdateUserPassword(ctx context.Context, arg UpdateUserPasswordParams) error
 	UpdateUserQuietHours(ctx context.Context, arg UpdateUserQuietHoursParams) error
 	UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams) (Workspace, error)
+	// Admin dashboard update — separately named so callers distinguish
+	// brand-change PATCHes from retention-policy changes (different audit
+	// events fire). retention_days is always written so the caller can
+	// null it out ("keep forever") explicitly.
+	UpdateWorkspaceAdmin(ctx context.Context, arg UpdateWorkspaceAdminParams) (Workspace, error)
 	// Email-only attendees (external guests). Same pattern.
 	UpsertExternalAttendee(ctx context.Context, arg UpsertExternalAttendeeParams) (EventAttendee, error)
 	// External-calendar connections + sync state (M9-P3).

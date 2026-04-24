@@ -240,6 +240,7 @@ func (s *Server) routes() {
 	s.mountWebhooks(api)
 	s.mountBotAPI(api)
 	s.mountSlashCommands(api)
+	s.mountAdmin(api)
 }
 
 func (s *Server) splashPage(c echo.Context) error {

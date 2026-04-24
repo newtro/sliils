@@ -8,6 +8,8 @@ package sqlcgen
 import (
 	"context"
 	"net/netip"
+
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const insertAuditLog = `-- name: InsertAuditLog :exec
@@ -36,4 +38,71 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 		arg.Metadata,
 	)
 	return err
+}
+
+const listAuditLogForWorkspace = `-- name: ListAuditLogForWorkspace :many
+SELECT al.id, al.workspace_id, al.actor_user_id, al.actor_ip,
+       al.action, al.target_kind, al.target_id, al.metadata, al.created_at,
+       u.display_name AS actor_display_name,
+       u.email AS actor_email
+FROM   audit_log al
+LEFT JOIN users u ON u.id = al.actor_user_id
+WHERE  al.workspace_id = $1
+ORDER BY al.id DESC
+LIMIT  $2 OFFSET $3
+`
+
+type ListAuditLogForWorkspaceParams struct {
+	WorkspaceID *int64
+	Limit       int32
+	Offset      int32
+}
+
+type ListAuditLogForWorkspaceRow struct {
+	ID               int64
+	WorkspaceID      *int64
+	ActorUserID      *int64
+	ActorIp          *netip.Addr
+	Action           string
+	TargetKind       *string
+	TargetID         *string
+	Metadata         []byte
+	CreatedAt        pgtype.Timestamptz
+	ActorDisplayName *string
+	ActorEmail       *string
+}
+
+// Admin dashboard feed. Joins the actor's display_name for a readable
+// "who did what" view. ORDER BY id DESC is stable even when two events
+// share the same created_at millisecond.
+func (q *Queries) ListAuditLogForWorkspace(ctx context.Context, arg ListAuditLogForWorkspaceParams) ([]ListAuditLogForWorkspaceRow, error) {
+	rows, err := q.db.Query(ctx, listAuditLogForWorkspace, arg.WorkspaceID, arg.Limit, arg.Offset)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListAuditLogForWorkspaceRow{}
+	for rows.Next() {
+		var i ListAuditLogForWorkspaceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.WorkspaceID,
+			&i.ActorUserID,
+			&i.ActorIp,
+			&i.Action,
+			&i.TargetKind,
+			&i.TargetID,
+			&i.Metadata,
+			&i.CreatedAt,
+			&i.ActorDisplayName,
+			&i.ActorEmail,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

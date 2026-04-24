@@ -42,6 +42,40 @@ SET name        = COALESCE($2, name),
 WHERE id = $1
 RETURNING *;
 
+-- name: UpdateWorkspaceAdmin :one
+-- Admin dashboard update — separately named so callers distinguish
+-- brand-change PATCHes from retention-policy changes (different audit
+-- events fire). retention_days is always written so the caller can
+-- null it out ("keep forever") explicitly.
+UPDATE workspaces
+SET name           = COALESCE(sqlc.narg('name')::text,        name),
+    description    = COALESCE(sqlc.narg('description')::text, description),
+    brand_color    = COALESCE(sqlc.narg('brand_color')::text, brand_color),
+    logo_file_id   = COALESCE(sqlc.narg('logo_file_id')::bigint, logo_file_id),
+    retention_days = sqlc.narg('retention_days')::int
+WHERE id = sqlc.arg('id')::bigint
+RETURNING *;
+
+-- name: ListWorkspacesWithRetention :many
+-- Fed into the retention-sweep worker. Returns every workspace whose
+-- admins have opted into automatic message purging.
+SELECT id, retention_days
+FROM   workspaces
+WHERE  retention_days IS NOT NULL AND retention_days > 0
+  AND  archived_at IS NULL;
+
+-- name: PurgeOldMessages :exec
+-- Soft-delete messages older than the retention window. Messages are
+-- partitioned; the date bound is essential for partition pruning.
+UPDATE messages
+SET    deleted_at = now(),
+       body_md    = '',
+       body_blocks = '[]'::jsonb
+WHERE  workspace_id = $1
+  AND  created_at >= $2
+  AND  created_at <  $3
+  AND  deleted_at IS NULL;
+
 -- name: ArchiveWorkspace :exec
 UPDATE workspaces
 SET archived_at = now()

@@ -193,6 +193,64 @@ func (q *Queries) ListWorkspacesForUser(ctx context.Context, userID int64) ([]Li
 	return items, nil
 }
 
+const listWorkspacesWithRetention = `-- name: ListWorkspacesWithRetention :many
+SELECT id, retention_days
+FROM   workspaces
+WHERE  retention_days IS NOT NULL AND retention_days > 0
+  AND  archived_at IS NULL
+`
+
+type ListWorkspacesWithRetentionRow struct {
+	ID            int64
+	RetentionDays *int32
+}
+
+// Fed into the retention-sweep worker. Returns every workspace whose
+// admins have opted into automatic message purging.
+func (q *Queries) ListWorkspacesWithRetention(ctx context.Context) ([]ListWorkspacesWithRetentionRow, error) {
+	rows, err := q.db.Query(ctx, listWorkspacesWithRetention)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListWorkspacesWithRetentionRow{}
+	for rows.Next() {
+		var i ListWorkspacesWithRetentionRow
+		if err := rows.Scan(&i.ID, &i.RetentionDays); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const purgeOldMessages = `-- name: PurgeOldMessages :exec
+UPDATE messages
+SET    deleted_at = now(),
+       body_md    = '',
+       body_blocks = '[]'::jsonb
+WHERE  workspace_id = $1
+  AND  created_at >= $2
+  AND  created_at <  $3
+  AND  deleted_at IS NULL
+`
+
+type PurgeOldMessagesParams struct {
+	WorkspaceID int64
+	CreatedAt   pgtype.Timestamptz
+	CreatedAt_2 pgtype.Timestamptz
+}
+
+// Soft-delete messages older than the retention window. Messages are
+// partitioned; the date bound is essential for partition pruning.
+func (q *Queries) PurgeOldMessages(ctx context.Context, arg PurgeOldMessagesParams) error {
+	_, err := q.db.Exec(ctx, purgeOldMessages, arg.WorkspaceID, arg.CreatedAt, arg.CreatedAt_2)
+	return err
+}
+
 const updateWorkspace = `-- name: UpdateWorkspace :one
 UPDATE workspaces
 SET name        = COALESCE($2, name),
@@ -215,6 +273,56 @@ func (q *Queries) UpdateWorkspace(ctx context.Context, arg UpdateWorkspaceParams
 		arg.Name,
 		arg.Description,
 		arg.BrandColor,
+	)
+	var i Workspace
+	err := row.Scan(
+		&i.ID,
+		&i.Slug,
+		&i.Name,
+		&i.Description,
+		&i.BrandColor,
+		&i.LogoFileID,
+		&i.RetentionDays,
+		&i.CreatedBy,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.ArchivedAt,
+	)
+	return i, err
+}
+
+const updateWorkspaceAdmin = `-- name: UpdateWorkspaceAdmin :one
+UPDATE workspaces
+SET name           = COALESCE($1::text,        name),
+    description    = COALESCE($2::text, description),
+    brand_color    = COALESCE($3::text, brand_color),
+    logo_file_id   = COALESCE($4::bigint, logo_file_id),
+    retention_days = $5::int
+WHERE id = $6::bigint
+RETURNING id, slug, name, description, brand_color, logo_file_id, retention_days, created_by, created_at, updated_at, archived_at
+`
+
+type UpdateWorkspaceAdminParams struct {
+	Name          *string
+	Description   *string
+	BrandColor    *string
+	LogoFileID    *int64
+	RetentionDays *int32
+	ID            int64
+}
+
+// Admin dashboard update — separately named so callers distinguish
+// brand-change PATCHes from retention-policy changes (different audit
+// events fire). retention_days is always written so the caller can
+// null it out ("keep forever") explicitly.
+func (q *Queries) UpdateWorkspaceAdmin(ctx context.Context, arg UpdateWorkspaceAdminParams) (Workspace, error) {
+	row := q.db.QueryRow(ctx, updateWorkspaceAdmin,
+		arg.Name,
+		arg.Description,
+		arg.BrandColor,
+		arg.LogoFileID,
+		arg.RetentionDays,
+		arg.ID,
 	)
 	var i Workspace
 	err := row.Scan(
